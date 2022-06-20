@@ -2,4 +2,7 @@
 
 members = [
     "alglobo",
+    "banco",
+    "aerolinea",
+    "hotel"
 ]
