@@ -1,0 +1,7 @@
+id,cliente,precio_hotel,precio_aerolinea
+1,lucho,20,30
+2,lu,10,50
+3,viole,25,10
+4,falla_banco,25,10
+5,falla_aerolinea,25,10
+6,falla_hotel,25,10

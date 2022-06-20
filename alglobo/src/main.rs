@@ -1,50 +1,33 @@
-extern crate actix;
-extern crate actix_rt;
-use actix::prelude::*;
+use std::{io::Write, net::TcpStream, time::Duration};
 
-/// Define message
-#[derive(Message)]
-#[rtype(result = "Result<bool, std::io::Error>")]
-struct Ping;
+use helpers::TransactionMessage;
 
-// Define actor
-struct MyActor;
+fn send_transaction_message(stream: &mut TcpStream, msg: TransactionMessage) {
+    let payload = msg.to_bytes();
+    let sz = payload.len() as u32;
+    stream.write_all(&sz.to_le_bytes()).unwrap();
+    stream.write_all(&payload).unwrap();
+}
 
-// Provide Actor implementation for our actor
-impl Actor for MyActor {
-    type Context = Context<Self>;
+fn main() {
+    let mut stream = TcpStream::connect("0.0.0.0:9999").unwrap();
 
-    fn started(&mut self, ctx: &mut Context<Self>) {
-        println!("Actor is alive");
-    }
-
-    fn stopped(&mut self, ctx: &mut Context<Self>) {
-        println!("Actor is stopped");
+    for i in 0..10 {
+        send_transaction_message(
+            &mut stream,
+            TransactionMessage::Prepare {
+                transaction_id: 12 + i,
+                client: "lucho".into(),
+            },
+        );
+        send_transaction_message(
+            &mut stream,
+            TransactionMessage::Commit {
+                transaction_id: 12 + i,
+            },
+        );
+        std::thread::sleep(Duration::from_millis(100));
     }
 }
 
-/// Define handler for `Ping` message
-impl Handler<Ping> for MyActor {
-    type Result = Result<bool, std::io::Error>;
-
-    fn handle(&mut self, msg: Ping, ctx: &mut Context<Self>) -> Self::Result {
-        println!("Ping received");
-
-        Ok(true)
-    }
-}
-
-#[actix_rt::main]
-async fn main() {
-    // Start MyActor in current thread
-    let addr = MyActor.start();
-
-    // Send Ping message.
-    // send() message returns Future object, that resolves to message result
-    let result = addr.send(Ping).await;
-
-    match result {
-        Ok(res) => println!("Got result: {}", res.unwrap()),
-        Err(err) => println!("Got error: {}", err),
-    }
-}
+// [P TID L U C H O] [C TID]

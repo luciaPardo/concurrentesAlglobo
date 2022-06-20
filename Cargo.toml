@@ -4,5 +4,6 @@ members = [
     "alglobo",
     "banco",
     "aerolinea",
-    "hotel"
+    "hotel",
+    "helpers"
 ]
