@@ -1,11 +1,5 @@
-[package]
-name = "tp-concurrentes"
-version = "0.1.0"
-edition = "2021"
+[workspace]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-actix = "0.13.0"
-actix-rt = "2.7.0"
-
+members = [
+    "alglobo",
+]
