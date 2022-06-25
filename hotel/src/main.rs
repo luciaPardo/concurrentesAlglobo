@@ -2,10 +2,12 @@
 
 use std::{collections::HashMap, io::Read, sync::Arc};
 
+use actix::dev::MessageResponse;
 use actix::{Actor, Context, Handler};
-use actix_rt::net::TcpListener;
+use helpers::protocol::Protocol;
 use helpers::TransactionMessage;
 use tokio::io::AsyncReadExt;
+use tokio::net::TcpListener;
 
 enum TransactionState {
     Accepted { client: String },
@@ -80,6 +82,7 @@ impl Handler<TransactionMessage> for Hotel {
                     }
                 }
             }
+            _ => panic!("Invalid"),
         }
 
         Ok(true)
@@ -95,17 +98,14 @@ async fn main() {
     let hotel = Hotel::new();
     let addr = Arc::new(hotel.start());
 
-    while let Ok((mut stream, _)) = listener.accept().await {
+    while let Ok((stream, _)) = listener.accept().await {
+        let mut protocol = Protocol::new(stream);
         let addr = addr.clone();
         handles.push(actix_rt::spawn(async move {
             loop {
-                let mut sz = [0u8; 4];
-                if stream.read_exact(&mut sz).await.is_ok() {
-                    let mut buf = vec![0u8; u32::from_le_bytes(sz) as usize];
-                    stream.read_exact(&mut buf).await.unwrap();
-                    let message = TransactionMessage::from_bytes(&buf);
-                    println!("Received message: {:?}", message);
-                    addr.do_send(message);
+                let message = protocol.receive().await;
+                if let Some(message) = message {
+                    addr.send(message).await.unwrap().unwrap();
                 } else {
                     println!("Client disconnected");
                     break;

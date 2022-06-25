@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 actix = "0.13"
 actix-rt = "2.7.0"
+tokio = "1.19"
