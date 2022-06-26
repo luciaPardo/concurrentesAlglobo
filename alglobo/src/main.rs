@@ -1,10 +1,11 @@
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
 use std::sync::Arc;
 use std::{thread, time::Duration};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+mod leader_election;
+mod replication;
 
-
-use helpers::{TransactionMessage, protocol::Protocol};
+use helpers::{protocol::Protocol, TransactionMessage};
 
 async fn send_transaction_message(stream: &mut TcpStream, msg: TransactionMessage) {
     let payload = msg.to_bytes();
@@ -21,7 +22,7 @@ async fn main() {
     for i in 0..10 {
         client.prepare(i, "Lucía".into()).await;
 
-       client.commit(i).await;
+        client.commit(i).await;
         std::thread::sleep(Duration::from_millis(100));
     }
 }
