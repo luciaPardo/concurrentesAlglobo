@@ -9,3 +9,4 @@ edition = "2021"
 actix = "0.13.0"
 actix-rt = "2.7.0"
 helpers = { path = "../helpers" }
+tokio = "1.19"

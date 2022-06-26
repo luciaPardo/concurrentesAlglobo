@@ -3,7 +3,7 @@ pub mod protocol;
 use actix::Message;
 
 #[derive(Eq, PartialEq, Debug, Message)]
-#[rtype(result = "Result<bool, std::io::Error>")]
+#[rtype(result = "Result<Option<bool>, std::io::Error>")]
 pub enum TransactionMessage {
     Prepare { transaction_id: u32, client: String },
     Abort { transaction_id: u32 },

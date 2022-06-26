@@ -4,7 +4,7 @@ use std::{collections::HashMap, io::Read, sync::Arc};
 
 use actix::dev::MessageResponse;
 use actix::{Actor, Context, Handler};
-use helpers::protocol::Protocol;
+use helpers::protocol::{self, Protocol};
 use helpers::TransactionMessage;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
@@ -42,7 +42,7 @@ impl Actor for Hotel {
 }
 
 impl Handler<TransactionMessage> for Hotel {
-    type Result = Result<bool, std::io::Error>;
+    type Result = Result<Option<bool>, std::io::Error>;
 
     fn handle(&mut self, msg: TransactionMessage, _ctx: &mut Context<Self>) -> Self::Result {
         println!("[HOTEL] handle: {:?}", msg);
@@ -51,9 +51,13 @@ impl Handler<TransactionMessage> for Hotel {
                 transaction_id,
                 client,
             } => {
+                if client == "falla_hotel" {
+                    return Ok(Some(false));
+                }
                 self.transaction_log
                     .insert(transaction_id, TransactionState::Accepted { client });
-                // TODO: mandar OK a AlGlobo
+
+                return Ok(Some(true));
             }
             TransactionMessage::Abort { transaction_id } => {
                 self.transaction_log
@@ -85,7 +89,7 @@ impl Handler<TransactionMessage> for Hotel {
             _ => panic!("Invalid"),
         }
 
-        Ok(true)
+        Ok(Some(true))
     }
 }
 
@@ -99,13 +103,19 @@ async fn main() {
     let addr = Arc::new(hotel.start());
 
     while let Ok((stream, _)) = listener.accept().await {
-        let mut protocol = Protocol::new(stream);
         let addr = addr.clone();
+        let mut protocol = Protocol::new(stream);
         handles.push(actix_rt::spawn(async move {
             loop {
                 let message = protocol.receive().await;
                 if let Some(message) = message {
-                    addr.send(message).await.unwrap().unwrap();
+                    if let Ok(Some(result)) = addr.send(message).await.unwrap() {
+                        if result {
+                            protocol.send_ok().await;
+                        } else {
+                            protocol.send_failure().await;
+                        }
+                    }
                 } else {
                     println!("Client disconnected");
                     break;

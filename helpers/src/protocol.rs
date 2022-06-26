@@ -1,5 +1,4 @@
 use crate::TransactionMessage;
-use std::string;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -12,30 +11,32 @@ impl Protocol {
         Self { stream }
     }
     pub async fn commit(&mut self, transaction_id: u32) {
-        let msg = TransactionMessage::Commit { transaction_id };
-        let message = TransactionMessage::to_bytes(&msg);
-        self.stream.write(&message).await.unwrap();
+        self.send(TransactionMessage::Commit { transaction_id })
+            .await;
     }
 
     pub async fn prepare(&mut self, transaction_id: u32, client: String) -> bool {
-        let msg = TransactionMessage::Prepare {
+        self.send(TransactionMessage::Prepare {
             transaction_id,
             client,
-        };
-        let message = TransactionMessage::to_bytes(&msg);
-        self.stream.write(&message).await.unwrap();
-        let mut data = [0 as u8; 6];
-        self.stream.read_exact(&mut data).await.unwrap();
-        match TransactionMessage::from_bytes(&data) {
-            TransactionMessage::Response { success } => return success,
+        })
+        .await;
+        match self.receive().await {
+            Some(TransactionMessage::Response { success }) => return success,
             res => panic!("Invalid prepare response: {:?}", res),
         }
     }
 
     pub async fn abort(&mut self, transaction_id: u32) {
-        let msg = TransactionMessage::Abort { transaction_id };
-        let message = TransactionMessage::to_bytes(&msg);
-        self.stream.write(&message).await.unwrap();
+        self.send(TransactionMessage::Abort { transaction_id })
+            .await;
+    }
+
+    async fn send(&mut self, msg: TransactionMessage) {
+        let payload = msg.to_bytes();
+        let sz = payload.len() as u32;
+        self.stream.write_all(&sz.to_le_bytes()).await.unwrap();
+        self.stream.write_all(&payload).await.unwrap();
     }
 
     pub async fn receive(&mut self) -> Option<TransactionMessage> {
@@ -48,5 +49,14 @@ impl Protocol {
         } else {
             None
         }
+    }
+    pub async fn send_ok(&mut self) {
+        self.send(TransactionMessage::Response { success: true })
+            .await;
+    }
+
+    pub async fn send_failure(&mut self) {
+        self.send(TransactionMessage::Response { success: false })
+            .await;
     }
 }
