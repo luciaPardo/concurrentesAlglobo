@@ -1,13 +1,14 @@
 extern crate actix;
-
+pub mod protocol;
 use actix::Message;
 
 #[derive(Eq, PartialEq, Debug, Message)]
-#[rtype(result = "Result<bool, std::io::Error>")]
+#[rtype(result = "Result<Option<bool>, std::io::Error>")]
 pub enum TransactionMessage {
     Prepare { transaction_id: u32, client: String },
     Abort { transaction_id: u32 },
     Commit { transaction_id: u32 },
+    Response { success: bool },
 }
 
 impl TransactionMessage {
@@ -33,6 +34,15 @@ impl TransactionMessage {
                 result.extend_from_slice(&u32::to_le_bytes(*transaction_id));
                 result
             }
+            TransactionMessage::Response { success } => {
+                if *success {
+                    vec![b'R', b't']
+                }
+                else{
+                    vec![b'R',b'f']
+                }
+            }
+
         }
     }
 
@@ -47,6 +57,9 @@ impl TransactionMessage {
             },
             b'C' => TransactionMessage::Commit {
                 transaction_id: u32::from_le_bytes(bytes[1..].try_into().unwrap()),
+            },
+            b'R'=> TransactionMessage::Response {
+                success: bytes[1]== b't',
             },
             _ => panic!("Invalid transaction message: {:?}", bytes),
         }
@@ -73,6 +86,11 @@ mod tests {
 
         let msg = TransactionMessage::Abort {
             transaction_id: 1234556,
+        };
+        assert_eq!(TransactionMessage::from_bytes(&msg.to_bytes()), msg);
+
+        let msg = TransactionMessage::Response {
+            success: true,
         };
         assert_eq!(TransactionMessage::from_bytes(&msg.to_bytes()), msg);
     }
