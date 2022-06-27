@@ -45,13 +45,13 @@ impl Handler<TransactionMessage> for Airline {
         println!("[Airline] handle: {:?}", msg);
         match msg {
             TransactionMessage::Prepare { transaction } => {
-                if transaction.cliente == "falla_Airline" {
+                if transaction.client == "falla_Airline" {
                     return Ok(Some(false));
                 }
                 self.transaction_log.insert(
                     transaction.id,
                     TransactionState::Accepted {
-                        client: transaction.cliente,
+                        client: transaction.client,
                     },
                 );
 

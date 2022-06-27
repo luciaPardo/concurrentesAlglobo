@@ -5,12 +5,13 @@ use replication::Replication;
 mod airline_client;
 mod bank_client;
 mod hotel_client;
+mod payments_queue;
+use payments_queue::PaymentsQueue;
 use std::sync::Arc;
 use std::{thread, time::Duration};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 mod leader_election;
-// mod payments_queue;
 mod replication;
 
 use helpers::alglobo_transaction::AlgloboTransaction;
@@ -40,15 +41,9 @@ async fn replica_main() {
     // TODO: replace bank and airline with correct clients
     let mut airline = AirlineClient::new().await;
     let mut bank = HotelClient::new().await;
+    let payments_queue = PaymentsQueue::new(1000);
     loop {
-        for i in 0..10 {
-            let tx = AlgloboTransaction {
-                id: i,
-                client: "Lucía".into(),
-                hotel_price: 10,
-                airline_price: 20,
-            };
-
+        while let Some(tx) = payments_queue.pop() {
             if !hotel.create_transaction(&tx).await {
                 println!("Hotel did not like transaction {:?}", tx);
             }

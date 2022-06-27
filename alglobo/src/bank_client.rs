@@ -1,4 +1,4 @@
-use helpers::{alglobo_transaction::Pago, protocol::Protocol};
+use helpers::{alglobo_transaction::AlgloboTransaction, protocol::Protocol};
 use tokio::net::TcpStream;
 
 pub struct BankClient {
@@ -12,10 +12,8 @@ impl BankClient {
         }
     }
 
-    pub async fn create_transaction(&mut self, transaction: &Pago) -> bool {
-        self.protocol
-            .prepare(transaction)
-            .await
+    pub async fn create_transaction(&mut self, transaction: &AlgloboTransaction) -> bool {
+        self.protocol.prepare(transaction).await
     }
 
     pub async fn commit(&mut self, transaction_id: u32) {

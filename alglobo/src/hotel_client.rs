@@ -12,7 +12,7 @@ impl HotelClient {
         }
     }
 
-    pub async fn create_transaction(&mut self, transaction: &Pago) -> bool {
+    pub async fn create_transaction(&mut self, transaction: &AlgloboTransaction) -> bool {
         self.protocol.prepare(transaction).await
     }
 

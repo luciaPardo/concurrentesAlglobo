@@ -7,7 +7,7 @@ extern crate csv;
 use csv::Reader;
 use std::collections::VecDeque;
 
-struct PaymentsQueue {
+pub struct PaymentsQueue {
     queue: Queue,
 }
 
@@ -29,9 +29,10 @@ impl PaymentsQueue {
         Self { queue }
     }
     pub fn get_ids(path: &str, processed: &mut HashSet<u32>) {
-        let mut reader = Reader::from_path(path).expect("failed to read file {:?}", path);
+        let mut reader = Reader::from_path(path).expect(&format!("failed to read file {:?}", path));
         for result in reader.deserialize() {
-            let record: AlgloboTransaction = result.expect("failed to parse file {:?}", path);
+            let record: AlgloboTransaction =
+                result.expect(&format!("failed to parse file {:?}", path));
             processed.insert(record.id);
         }
     }
@@ -65,11 +66,12 @@ impl Queue {
         self.cv_empty.notify_one()
     }
     pub fn pop_front(&self) -> Option<AlgloboTransaction> {
-        let mut data = self.data.lock().expect("poison");
+        /*let mut data = self.data.lock().expect("poison");
         while data.len() == 0 {
             data = self.cv_empty.wait(data).expect("poison");
             break;
-        }
-        data.pop_front()
+        }*/
+        let mut cola = self.data.lock().expect("poison");
+        cola.pop_front()
     }
 }
