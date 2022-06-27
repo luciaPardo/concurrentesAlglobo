@@ -8,4 +8,5 @@ edition = "2021"
 [dependencies]
 actix = "0.13"
 actix-rt = "2.7.0"
+serde = { version = "1", features = ["derive"] }
 tokio = "1.19"

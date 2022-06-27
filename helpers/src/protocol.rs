@@ -22,7 +22,7 @@ impl Protocol {
         })
         .await;
         match self.receive().await {
-            Some(TransactionMessage::Response { success }) => return success,
+            Some(TransactionMessage::Response { success }) => success,
             res => panic!("Invalid prepare response: {:?}", res),
         }
     }
@@ -45,7 +45,7 @@ impl Protocol {
             let mut buf = vec![0u8; u32::from_le_bytes(sz) as usize];
             self.stream.read_exact(&mut buf).await.unwrap();
             let message = TransactionMessage::from_bytes(&buf);
-            return Some(message);
+            Some(message)
         } else {
             None
         }

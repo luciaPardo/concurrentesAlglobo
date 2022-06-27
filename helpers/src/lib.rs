@@ -1,4 +1,5 @@
 extern crate actix;
+pub mod alglobo_transaction;
 pub mod protocol;
 use actix::Message;
 
@@ -37,12 +38,10 @@ impl TransactionMessage {
             TransactionMessage::Response { success } => {
                 if *success {
                     vec![b'R', b't']
-                }
-                else{
-                    vec![b'R',b'f']
+                } else {
+                    vec![b'R', b'f']
                 }
             }
-
         }
     }
 
@@ -58,8 +57,8 @@ impl TransactionMessage {
             b'C' => TransactionMessage::Commit {
                 transaction_id: u32::from_le_bytes(bytes[1..].try_into().unwrap()),
             },
-            b'R'=> TransactionMessage::Response {
-                success: bytes[1]== b't',
+            b'R' => TransactionMessage::Response {
+                success: bytes[1] == b't',
             },
             _ => panic!("Invalid transaction message: {:?}", bytes),
         }
@@ -89,9 +88,7 @@ mod tests {
         };
         assert_eq!(TransactionMessage::from_bytes(&msg.to_bytes()), msg);
 
-        let msg = TransactionMessage::Response {
-            success: true,
-        };
+        let msg = TransactionMessage::Response { success: true };
         assert_eq!(TransactionMessage::from_bytes(&msg.to_bytes()), msg);
     }
 }
