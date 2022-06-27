@@ -40,7 +40,7 @@ async fn replica_main() {
 
     // TODO: replace bank and airline with correct clients
     let mut airline = AirlineClient::new().await;
-    let mut bank = HotelClient::new().await;
+    let mut bank = BankClient::new().await;
     let payments_queue = PaymentsQueue::new(1000);
     loop {
         while let Some(tx) = payments_queue.pop() {
