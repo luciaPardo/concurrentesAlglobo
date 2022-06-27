@@ -6,58 +6,27 @@ extern crate csv;
 
 use csv::Reader;
 use std::collections::VecDeque;
-use std::error::Error;
-
-fn read_from_file(path: &str) -> Result<(), Box<dyn Error>> {
-    let mut reader = Reader::from_path(path)?;
-    for result in reader.deserialize() {
-        let record: Pago = result?;
-        println!("{:?}", record);
-    }
-    Ok(())
-}
-fn read_from_file_encolar(path: &str, cola: &Cola) -> Result<(), Box<dyn Error>> {
-    let mut reader = Reader::from_path(path)?;
-    for result in reader.deserialize() {
-        let record: Pago = result?;
-        println!("{:?}", record);
-        cola.push(record.cliente);
-    }
-    Ok(())
-}
-fn main() {
-    // If an error occurs print error
-    if let Err(e) = read_from_file("pagos.csv") {
-        eprintln!("{}", e);
-    }
-    let cola = Cola::new(6);
-    if let Err(e) = read_from_file_encolar("pagos.csv", &cola) {
-        eprintln!("{}", e);
-    }
-    for _ in 0..6 {
-        println!("{:?}", cola.pop_front());
-    }
-}
 
 struct ColaDePagos {
     cola: Cola,
-    ids: u32,
 }
 
 impl ColaDePagos {
-    pub fn new(&self, cola: &Cola) {
+    pub fn new(size: usize) -> Self {
+        let cola = Cola::new(size);
         let mut procesados = HashSet::<u32>::new();
-        Self::get_ids("./fallidos", &mut procesados);
-        Self::get_ids("./procesados", &mut procesados);
-        let mut reader = Reader::from_path("./pagos").expect("error leyendo el archivo");
+        Self::get_ids("./fallidos.csv", &mut procesados);
+        Self::get_ids("./procesados.csv", &mut procesados);
+        let mut reader = Reader::from_path("./pagos.csv").expect("error leyendo el archivo");
         for result in reader.deserialize() {
             let record: Pago = result.expect("error parseando el archivo");
             if procesados.contains(&record.id) {
                 continue;
             } else {
-                cola.push(record.id.to_string());
+                cola.push(record);
             }
         }
+        Self { cola }
     }
     pub fn get_ids(path: &str, procesados: &mut HashSet<u32>) {
         let mut reader = Reader::from_path(path).expect("error leyendo el archivo");
@@ -66,9 +35,13 @@ impl ColaDePagos {
             procesados.insert(record.id);
         }
     }
+    pub fn pop_pago(&self) -> Option<Pago> {
+        let pago = self.cola.pop_front();
+        pago
+    }
 }
 struct Cola {
-    data: Mutex<VecDeque<String>>,
+    data: Mutex<VecDeque<Pago>>,
     cv_lleno: Condvar,
     cv_vacio: Condvar,
     maximo: usize,
@@ -83,7 +56,7 @@ impl Cola {
             maximo: k,
         }
     }
-    pub fn push(&self, valor: String) {
+    pub fn push(&self, valor: Pago) {
         let mut data = self.data.lock().expect("poison");
         while data.len() == self.maximo {
             data = self.cv_lleno.wait(data).expect("poison");
@@ -91,7 +64,7 @@ impl Cola {
         data.push_back(valor);
         self.cv_vacio.notify_one()
     }
-    pub fn pop_front(&self) -> Option<String> {
+    pub fn pop_front(&self) -> Option<Pago> {
         let mut data = self.data.lock().expect("poison");
         while data.len() == 0 {
             data = self.cv_vacio.wait(data).expect("poison");
