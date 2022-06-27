@@ -1,8 +1,14 @@
-use std::time::Duration;
-
+use airline_client::AirlineClient;
+use bank_client::BankClient;
 use hotel_client::HotelClient;
 use replication::Replication;
+mod airline_client;
+mod bank_client;
 mod hotel_client;
+use std::sync::Arc;
+use std::{thread, time::Duration};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 mod leader_election;
 // mod payments_queue;
 mod replication;
@@ -32,7 +38,7 @@ async fn replica_main() {
     let mut hotel = HotelClient::new().await;
 
     // TODO: replace bank and airline with correct clients
-    let mut airline = HotelClient::new().await;
+    let mut airline = AirlineClient::new().await;
     let mut bank = HotelClient::new().await;
     loop {
         for i in 0..10 {

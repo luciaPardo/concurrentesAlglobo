@@ -1,6 +1,5 @@
 use serde::Deserialize;
-
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct AlgloboTransaction {
     pub id: u32,
     pub client: String,

@@ -1,4 +1,5 @@
 use crate::TransactionMessage;
+use crate::alglobo_transaction::Pago;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -15,10 +16,9 @@ impl Protocol {
             .await;
     }
 
-    pub async fn prepare(&mut self, transaction_id: u32, client: String) -> bool {
-        self.send(TransactionMessage::Prepare {
-            transaction_id,
-            client,
+    pub async fn prepare(&mut self, transaction: &Pago) -> bool {
+        self.send(TransactionMessage::Prepare { 
+            transaction:transaction.clone()
         })
         .await;
         match self.receive().await {

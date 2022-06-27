@@ -3,7 +3,7 @@
 members = [
     "alglobo",
     "banco",
-    "aerolinea",
+    "airline",
     "hotel",
     "helpers"
 ]

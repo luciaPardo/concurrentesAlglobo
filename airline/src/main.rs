@@ -1,5 +1,3 @@
-// Actor: Hotel
-
 use std::{collections::HashMap, io::Read, sync::Arc};
 
 use actix::dev::MessageResponse;
@@ -15,12 +13,12 @@ enum TransactionState {
     Commit,
 }
 
-struct Hotel {
+struct Airline {
     reservations: u32,
     transaction_log: HashMap<u32, TransactionState>,
 }
 
-impl Hotel {
+impl Airline {
     pub fn new() -> Self {
         Self {
             reservations: 0,
@@ -28,27 +26,26 @@ impl Hotel {
         }
     }
 }
-
-impl Actor for Hotel {
+impl Actor for Airline {
     type Context = Context<Self>;
 
     fn started(&mut self, _ctx: &mut Context<Self>) {
-        println!("[HOTEL] Iniciado");
+        println!("[AIRLINE] Iniciado");
     }
 
     fn stopped(&mut self, _ctx: &mut Context<Self>) {
-        println!("[HOTEL] Detenido");
+        println!("[AIRLINE] Detenido");
     }
 }
 
-impl Handler<TransactionMessage> for Hotel {
+impl Handler<TransactionMessage> for Airline {
     type Result = Result<Option<bool>, std::io::Error>;
 
     fn handle(&mut self, msg: TransactionMessage, _ctx: &mut Context<Self>) -> Self::Result {
-        println!("[HOTEL] handle: {:?}", msg);
+        println!("[Airline] handle: {:?}", msg);
         match msg {
             TransactionMessage::Prepare { transaction } => {
-                if transaction.cliente == "falla_hotel" {
+                if transaction.cliente == "falla_Airline" {
                     return Ok(Some(false));
                 }
                 self.transaction_log.insert(
@@ -80,7 +77,9 @@ impl Handler<TransactionMessage> for Hotel {
                         // Mandar OK (ya commiteada)
                     }
                     Some(TransactionState::Abort) => {
-                        // Mandar Abort
+                        TransactionMessage::Abort { transaction_id };
+                        self.transaction_log
+                            .insert(transaction_id, TransactionState::Abort);
                     }
                     None => {
                         // transaction id no existe???
@@ -96,12 +95,12 @@ impl Handler<TransactionMessage> for Hotel {
 
 #[actix_rt::main]
 async fn main() {
-    let listener = TcpListener::bind("0.0.0.0:9999")
+    let listener = TcpListener::bind("0.0.0.0:9998")
         .await
-        .expect("Could not open port 9999");
+        .expect("Could not open port 9998");
     let mut handles = Vec::new();
-    let hotel = Hotel::new();
-    let addr = Arc::new(hotel.start());
+    let airline = Airline::new();
+    let addr = Arc::new(airline.start());
 
     while let Ok((stream, _)) = listener.accept().await {
         let addr = addr.clone();
