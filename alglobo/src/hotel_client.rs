@@ -1,4 +1,4 @@
-use helpers::{alglobo_transaction::Pago, protocol::Protocol};
+use helpers::{alglobo_transaction::AlgloboTransaction, protocol::Protocol};
 use tokio::net::TcpStream;
 
 pub struct HotelClient {
@@ -12,9 +12,9 @@ impl HotelClient {
         }
     }
 
-    pub async fn create_transaction(&mut self, transaction: &Pago) -> bool {
+    pub async fn create_transaction(&mut self, transaction: &AlgloboTransaction) -> bool {
         self.protocol
-            .prepare(transaction.id, transaction.cliente.clone())
+            .prepare(transaction.id, transaction.client.clone())
             .await
     }
 

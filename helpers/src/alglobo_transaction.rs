@@ -1,9 +1,9 @@
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-pub struct Pago {
+pub struct AlgloboTransaction {
     pub id: u32,
-    pub cliente: String,
-    pub precio_hotel: u32,
-    pub precio_aerolinea: u32,
+    pub client: String,
+    pub hotel_price: u32,
+    pub airline_price: u32,
 }

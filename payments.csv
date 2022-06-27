@@ -1,4 +1,4 @@
-id,cliente,precio_hotel,precio_aerolinea
+id,client,airline_price,airline_price
 1,lucho,20,30
 2,lu,10,50
 3,viole,25,10

@@ -7,7 +7,7 @@ mod leader_election;
 // mod payments_queue;
 mod replication;
 
-use helpers::alglobo_transaction::Pago;
+use helpers::alglobo_transaction::AlgloboTransaction;
 
 #[actix_rt::main]
 async fn main() {
@@ -36,11 +36,11 @@ async fn replica_main() {
     let mut bank = HotelClient::new().await;
     loop {
         for i in 0..10 {
-            let tx = Pago {
+            let tx = AlgloboTransaction {
                 id: i,
-                cliente: "Lucía".into(),
-                precio_hotel: 10,
-                precio_aerolinea: 20,
+                client: "Lucía".into(),
+                hotel_price: 10,
+                airline_price: 20,
             };
 
             if !hotel.create_transaction(&tx).await {
