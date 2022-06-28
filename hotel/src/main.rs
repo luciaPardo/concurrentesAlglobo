@@ -80,9 +80,7 @@ impl Handler<TransactionMessage> for Hotel {
                     Some(TransactionState::Commit) => {
                         // Mandar OK (ya commiteada)
                     }
-                    Some(TransactionState::Abort) => {
-                        // Mandar Abort
-                    }
+                    Some(TransactionState::Abort) => {}
                     None => {
                         // transaction id no existe???
                     }

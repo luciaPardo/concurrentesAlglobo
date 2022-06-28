@@ -1,7 +1,10 @@
+#[derive(Debug)]
 pub enum ControlMessage {
     Ok,
     Election,
     Coordinator,
+    Ping,
+    Pong,
 }
 
 impl ControlMessage {
@@ -10,6 +13,8 @@ impl ControlMessage {
             ControlMessage::Ok => b'O',
             ControlMessage::Election => b'E',
             ControlMessage::Coordinator => b'C',
+            ControlMessage::Ping => b'P',
+            ControlMessage::Pong => b'p',
         };
 
         let mut result = vec![opcode];
@@ -22,6 +27,8 @@ impl ControlMessage {
             b'O' => ControlMessage::Ok,
             b'E' => ControlMessage::Election,
             b'C' => ControlMessage::Coordinator,
+            b'P' => ControlMessage::Ping,
+            b'p' => ControlMessage::Pong,
             e => panic!("Invalid opcode: {:?}", e),
         };
 

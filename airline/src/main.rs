@@ -76,11 +76,7 @@ impl Handler<TransactionMessage> for Airline {
                     Some(TransactionState::Commit) => {
                         // Mandar OK (ya commiteada)
                     }
-                    Some(TransactionState::Abort) => {
-                        TransactionMessage::Abort { transaction_id };
-                        self.transaction_log
-                            .insert(transaction_id, TransactionState::Abort);
-                    }
+                    Some(TransactionState::Abort) => {}
                     None => {
                         // transaction id no existe???
                     }

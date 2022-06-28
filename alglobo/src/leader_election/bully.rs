@@ -1,37 +1,43 @@
 use std::net::UdpSocket;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
 use std::time::Duration;
 
 use super::control_message::ControlMessage;
+use super::leader_election_trait::LeaderElection;
 
 fn id_to_ctrladdr(id: u32) -> String {
     "127.0.0.1:1234".to_owned() + &*id.to_string()
 }
 
-const REPLICAS: u32 = 5;
+const REPLICAS: u32 = 4;
 const TIMEOUT: Duration = Duration::from_secs(10);
-struct BullyLeaderElection {
+const LEADER_HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(1);
+
+pub struct BullyLeaderElection {
     id: u32,
     socket: UdpSocket,
     leader_id: Arc<(Mutex<Option<u32>>, Condvar)>,
     got_ok: Arc<(Mutex<bool>, Condvar)>,
+    got_pong: Arc<(Mutex<Option<u32>>, Condvar)>,
     stop: Arc<(Mutex<bool>, Condvar)>,
 }
 
 impl BullyLeaderElection {
-    fn new(id: u32) -> BullyLeaderElection {
+    pub fn new(id: u32) -> BullyLeaderElection {
         let mut ret = BullyLeaderElection {
             id,
             socket: UdpSocket::bind(id_to_ctrladdr(id)).unwrap(),
             leader_id: Arc::new((Mutex::new(Some(id)), Condvar::new())),
             got_ok: Arc::new((Mutex::new(false), Condvar::new())),
+            got_pong: Arc::new((Mutex::new(None), Condvar::new())),
             stop: Arc::new((Mutex::new(false), Condvar::new())),
         };
 
         let mut clone = ret.clone();
         thread::spawn(move || clone.responder());
 
+        thread::sleep(Duration::from_secs(2));
         ret.find_new();
         ret
     }
@@ -73,7 +79,9 @@ impl BullyLeaderElection {
                 .1
                 .wait_while(self.leader_id.0.lock().unwrap(), |leader_id| {
                     leader_id.is_none()
-                });
+                })
+                .expect("poison")
+                .expect("poison2");
         }
     }
 
@@ -93,6 +101,7 @@ impl BullyLeaderElection {
 
     fn make_me_leader(&self) {
         // El nuevo coordinador se anuncia con un mensaje COORDINATOR
+        let mut leader_lock = self.leader_id.0.lock().unwrap();
         println!("[{}] me anuncio como lider", self.id);
         let msg = self.id_to_msg(b'C');
         for peer_id in 0..REPLICAS {
@@ -100,17 +109,19 @@ impl BullyLeaderElection {
                 self.socket.send_to(&msg, id_to_ctrladdr(peer_id)).unwrap();
             }
         }
-        *self.leader_id.0.lock().unwrap() = Some(self.id);
+        *leader_lock = Some(self.id);
     }
 
     fn responder(&mut self) {
+        println!("[{}] Responder started", self.id);
         while !*self.stop.0.lock().unwrap() {
             let mut buf = [0; ControlMessage::size_of()];
-            let (size, from) = self.socket.recv_from(&mut buf).unwrap();
-            let (message, id_from) = ControlMessage::from_bytes(&buf);
+            let (size, _) = self.socket.recv_from(&mut buf).unwrap();
+            let (message, id_from) = ControlMessage::from_bytes(&buf[0..size]);
             if *self.stop.0.lock().unwrap() {
                 break;
             }
+            println!(" Message : {:?}", message);
             match message {
                 ControlMessage::Ok => {
                     println!("[{}] recibí OK de {}", self.id, id_from);
@@ -135,20 +146,24 @@ impl BullyLeaderElection {
                     *self.leader_id.0.lock().unwrap() = Some(id_from);
                     self.leader_id.1.notify_all();
                 }
-                _ => {
-                    println!("[{}] ??? {}", self.id, id_from);
+                ControlMessage::Ping => {
+                    println!("[{}] recibí Ping de {}", self.id, id_from);
+                    self.socket
+                        .send_to(
+                            &ControlMessage::Pong.to_bytes(self.id),
+                            id_to_ctrladdr(id_from),
+                        )
+                        .unwrap();
+                }
+                ControlMessage::Pong => {
+                    println!("[{}] recibí Pong de {}", self.id, id_from);
+                    *self.got_pong.0.lock().unwrap() = Some(id_from);
                 }
             }
         }
         *self.stop.0.lock().unwrap() = false;
         self.stop.1.notify_all();
-    }
-
-    fn stop(&mut self) {
-        *self.stop.0.lock().unwrap() = true;
-        self.stop
-            .1
-            .wait_while(self.stop.0.lock().unwrap(), |should_stop| *should_stop);
+        println!("[{}] Responder finished", self.id);
     }
 
     fn clone(&self) -> BullyLeaderElection {
@@ -157,7 +172,51 @@ impl BullyLeaderElection {
             socket: self.socket.try_clone().unwrap(),
             leader_id: self.leader_id.clone(),
             got_ok: self.got_ok.clone(),
+            got_pong: self.got_pong.clone(),
             stop: self.stop.clone(),
         }
+    }
+}
+
+impl LeaderElection for BullyLeaderElection {
+    fn is_leader(&self) -> bool {
+        self.am_i_leader()
+    }
+
+    fn wait_until_becoming_leader(&mut self) {
+        while !self.is_leader() {
+            std::thread::sleep(LEADER_HEALTH_CHECK_TIMEOUT);
+            println!("checking if current leader is healthy");
+
+            let mut got_pong = self.got_pong.0.lock().unwrap();
+            *got_pong = None;
+            self.socket
+                .send_to(
+                    &ControlMessage::Ping.to_bytes(self.id),
+                    id_to_ctrladdr(self.get_leader_id()),
+                )
+                .unwrap();
+
+            println!("wait for leader response");
+            let (got_pong, _) = self
+                .got_pong
+                .1
+                .wait_timeout_while(got_pong, LEADER_HEALTH_CHECK_TIMEOUT, |e| e.is_none())
+                .unwrap();
+
+            let find_new_leader = match *got_pong {
+                Some(e) if e != self.get_leader_id() => true,
+                None => true,
+                _ => false,
+            };
+            drop(got_pong);
+            if find_new_leader {
+                self.find_new_leader();
+            }
+        }
+    }
+
+    fn find_new_leader(&mut self) {
+        self.find_new()
     }
 }
