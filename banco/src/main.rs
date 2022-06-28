@@ -61,7 +61,7 @@ impl Handler<TransactionMessage> for Bank {
             TransactionMessage::Abort { transaction_id } => {
                 self.transaction_log
                     .insert(transaction_id, TransactionState::Abort);
-                // TODO: mandar Abort a AlGlobo
+                
             }
             TransactionMessage::Commit { transaction_id } => {
                 match self.transaction_log.get(&transaction_id) {
@@ -85,9 +85,6 @@ impl Handler<TransactionMessage> for Bank {
                         // Mandar OK (ya commiteada)
                     }
                     Some(TransactionState::Abort) => {
-                        TransactionMessage::Abort { transaction_id };
-                        self.transaction_log
-                            .insert(transaction_id, TransactionState::Abort);
                     }
                     None => {
                         // transaction id no existe???
