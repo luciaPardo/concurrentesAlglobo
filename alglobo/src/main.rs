@@ -1,6 +1,7 @@
 use airline_client::AirlineClient;
 use bank_client::BankClient;
 use hotel_client::HotelClient;
+use leader_election::bully::BullyLeaderElection;
 use replication::Replication;
 mod airline_client;
 mod bank_client;
@@ -18,14 +19,32 @@ use helpers::alglobo_transaction::AlgloboTransaction;
 
 #[actix_rt::main]
 async fn main() {
-    let replication_manager = Replication::new();
+    let args = std::env::args().collect::<Vec<String>>();
+    let replica_id = if args.len() == 1 {
+        0u32
+    } else if args.len() == 2 {
+        args[1]
+            .parse()
+            .expect("Invalid replica id. Usage: ./alglobo [replica id]")
+    } else {
+        panic!("Usage: ./alglobo [replica id]");
+    };
+    let mut replication_manager = Replication::new(BullyLeaderElection::new(replica_id));
     loop {
         if replication_manager.is_leader() {
-            println!("Replica {} is the current leader.", std::process::id());
+            println!(
+                "[{}] Replica {} is the current leader.",
+                replica_id,
+                std::process::id()
+            );
             replica_main().await;
             return;
         } else {
-            println!("Replica {} is not the leader.", std::process::id());
+            println!(
+                "[{}] Replica {} is not the leader.",
+                replica_id,
+                std::process::id()
+            );
             replication_manager.wait_until_becoming_leader();
             println!(
                 "Current leader has failed. Replica {} will take over.",
