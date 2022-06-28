@@ -49,6 +49,7 @@ impl Handler<TransactionMessage> for Hotel {
         match msg {
             TransactionMessage::Prepare { transaction } => {
                 if transaction.client == "falla_hotel" {
+                    println!("fallo el hotel");
                     return Ok(Some(false));
                 }
                 self.transaction_log.insert(
@@ -112,8 +113,10 @@ async fn main() {
                 if let Some(message) = message {
                     if let Ok(Some(result)) = addr.send(message).await.unwrap() {
                         if result {
+                            println!("sending ok");
                             protocol.send_ok().await;
                         } else {
+                            println!("sending failure");
                             protocol.send_failure().await;
                         }
                     }

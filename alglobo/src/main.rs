@@ -7,14 +7,14 @@ mod bank_client;
 mod hotel_client;
 mod payments_queue;
 use payments_queue::PaymentsQueue;
+mod output_logger;
+use output_logger::OutputLogger;
 use std::sync::Arc;
 use std::{thread, time::Duration};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 mod leader_election;
 mod replication;
-
-use helpers::alglobo_transaction::AlgloboTransaction;
 
 #[actix_rt::main]
 async fn main() {
@@ -37,8 +37,8 @@ async fn main() {
 
 async fn replica_main() {
     let mut hotel = HotelClient::new().await;
+    let mut logger = OutputLogger::new("./failed.csv".into(), "./processed.csv".into());
 
-    // TODO: replace bank and airline with correct clients
     let mut airline = AirlineClient::new().await;
     let mut bank = BankClient::new().await;
     let payments_queue = PaymentsQueue::new(1000);
@@ -46,21 +46,28 @@ async fn replica_main() {
         while let Some(tx) = payments_queue.pop() {
             if !hotel.create_transaction(&tx).await {
                 println!("Hotel did not like transaction {:?}", tx);
+                logger.log_failed(&tx);
+                continue;
             }
             if !airline.create_transaction(&tx).await {
                 println!("Airline did not like transaction {:?}", tx);
                 hotel.abort(tx.id).await;
+                logger.log_failed(&tx);
+                continue;
             }
             if !bank.create_transaction(&tx).await {
                 println!("Bank did not like transaction {:?}", tx);
                 hotel.abort(tx.id).await;
                 airline.abort(tx.id).await;
+                logger.log_failed(&tx);
+                continue;
             }
 
             hotel.commit(tx.id).await;
             airline.commit(tx.id).await;
             bank.commit(tx.id).await;
             println!("Transaction {:?} approved", tx);
+            logger.log_success(&tx);
 
             std::thread::sleep(Duration::from_millis(100));
         }

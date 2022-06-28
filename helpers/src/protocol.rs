@@ -11,9 +11,10 @@ impl Protocol {
     pub fn new(stream: TcpStream) -> Self {
         Self { stream }
     }
-    pub async fn commit(&mut self, transaction_id: u32) {
+    pub async fn commit(&mut self, transaction_id: u32) -> bool {
         self.send(TransactionMessage::Commit { transaction_id })
             .await;
+        self.read_response().await
     }
 
     pub async fn prepare(&mut self, transaction: &AlgloboTransaction) -> bool {
@@ -21,15 +22,20 @@ impl Protocol {
             transaction: transaction.clone(),
         })
         .await;
+        self.read_response().await
+    }
+
+    async fn read_response(&mut self) -> bool {
         match self.receive().await {
             Some(TransactionMessage::Response { success }) => success,
             res => panic!("Invalid prepare response: {:?}", res),
         }
     }
 
-    pub async fn abort(&mut self, transaction_id: u32) {
+    pub async fn abort(&mut self, transaction_id: u32) -> bool {
         self.send(TransactionMessage::Abort { transaction_id })
             .await;
+        self.read_response().await
     }
 
     async fn send(&mut self, msg: TransactionMessage) {

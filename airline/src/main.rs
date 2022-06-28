@@ -1,6 +1,5 @@
 use std::{collections::HashMap, io::Read, sync::Arc};
 
-
 use actix::dev::MessageResponse;
 use actix::{Actor, Context, Handler};
 use helpers::protocol::{self, Protocol};
@@ -46,7 +45,7 @@ impl Handler<TransactionMessage> for Airline {
         println!("[Airline] handle: {:?}", msg);
         match msg {
             TransactionMessage::Prepare { transaction } => {
-                if transaction.client == "falla_Airline" {
+                if transaction.client == "falla_airline" {
                     return Ok(Some(false));
                 }
                 self.transaction_log.insert(

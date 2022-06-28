@@ -3,5 +3,5 @@ id,client,hotel_price,airline_price
 2,lu,10,50
 3,viole,25,10
 4,falla_banco,25,10
-5,falla_aerolinea,25,10
+5,falla_airline,25,10
 6,falla_hotel,25,10

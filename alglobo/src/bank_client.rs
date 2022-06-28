@@ -17,10 +17,10 @@ impl BankClient {
     }
 
     pub async fn commit(&mut self, transaction_id: u32) {
-        self.protocol.commit(transaction_id).await
+        self.protocol.commit(transaction_id).await;
     }
 
     pub async fn abort(&mut self, transaction_id: u32) {
-        self.protocol.abort(transaction_id).await
+        self.protocol.abort(transaction_id).await;
     }
 }

@@ -98,5 +98,8 @@ mod tests {
 
         let msg = TransactionMessage::Response { success: true };
         assert_eq!(TransactionMessage::from_bytes(&msg.to_bytes()), msg);
+
+        let msg = TransactionMessage::Response { success: false };
+        assert_eq!(TransactionMessage::from_bytes(&msg.to_bytes()), msg);
     }
 }

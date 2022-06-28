@@ -66,11 +66,6 @@ impl Queue {
         self.cv_empty.notify_one()
     }
     pub fn pop_front(&self) -> Option<AlgloboTransaction> {
-        /*let mut data = self.data.lock().expect("poison");
-        while data.len() == 0 {
-            data = self.cv_empty.wait(data).expect("poison");
-            break;
-        }*/
         let mut cola = self.data.lock().expect("poison");
         cola.pop_front()
     }
