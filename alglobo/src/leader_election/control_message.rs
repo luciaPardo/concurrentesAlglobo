@@ -5,6 +5,7 @@ pub enum ControlMessage {
     Coordinator,
     Ping,
     Pong,
+    GracefulQuit,
 }
 
 impl ControlMessage {
@@ -15,6 +16,7 @@ impl ControlMessage {
             ControlMessage::Coordinator => b'C',
             ControlMessage::Ping => b'P',
             ControlMessage::Pong => b'p',
+            ControlMessage::GracefulQuit => b'Q',
         };
 
         let mut result = vec![opcode];
@@ -29,6 +31,7 @@ impl ControlMessage {
             b'C' => ControlMessage::Coordinator,
             b'P' => ControlMessage::Ping,
             b'p' => ControlMessage::Pong,
+            b'Q' => ControlMessage::GracefulQuit,
             e => panic!("Invalid opcode: {:?}", e),
         };
 

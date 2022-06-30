@@ -1,72 +1,63 @@
-use helpers::alglobo_transaction::AlgloboTransaction;
-use std::collections::HashSet;
-use std::sync::Condvar;
-use std::sync::Mutex;
-extern crate csv;
-
 use csv::Reader;
-use std::collections::VecDeque;
+use std::collections::HashSet;
+use std::io::Result;
+
+use crate::queue::Queue;
+use helpers::alglobo_transaction::AlgloboTransaction;
 
 pub struct PaymentsQueue {
     queue: Queue,
 }
 
 impl PaymentsQueue {
-    pub fn new(size: usize) -> Self {
+    pub fn new(
+        size: usize,
+        pending_payments_file: &str,
+        processed_file_path: &str,
+        failed_file_path: &str,
+    ) -> Result<Self> {
         let queue = Queue::new(size);
-        let mut processed = HashSet::<u32>::new();
-        Self::get_ids("./failed.csv", &mut processed);
-        Self::get_ids("./processed.csv", &mut processed);
-        let mut reader = Reader::from_path("./payments.csv").expect("failed to read payments file");
+
+        let processed_ids = Self::load_processed_ids(failed_file_path, processed_file_path)?;
+
+        let mut reader = Reader::from_path(pending_payments_file)?;
         for result in reader.deserialize() {
-            let record: AlgloboTransaction = result.expect("failed to parse payments file");
-            if processed.contains(&record.id) {
+            let record: AlgloboTransaction = result?;
+            if processed_ids.contains(&record.id) {
                 continue;
             } else {
                 queue.push(record);
             }
         }
-        Self { queue }
-    }
-    pub fn get_ids(path: &str, processed: &mut HashSet<u32>) {
-        let mut reader = Reader::from_path(path).expect(&format!("failed to read file {:?}", path));
-        for result in reader.deserialize() {
-            let record: AlgloboTransaction =
-                result.expect(&format!("failed to parse file {:?}", path));
-            processed.insert(record.id);
-        }
-    }
-    pub fn pop(&self) -> Option<AlgloboTransaction> {
-        let transaction = self.queue.pop_front();
-        transaction
-    }
-}
-struct Queue {
-    data: Mutex<VecDeque<AlgloboTransaction>>,
-    cv_full: Condvar,
-    cv_empty: Condvar,
-    max: usize,
-}
 
-impl Queue {
-    pub fn new(k: usize) -> Self {
-        Self {
-            data: Mutex::new(VecDeque::new()),
-            cv_full: Condvar::new(),
-            cv_empty: Condvar::new(),
-            max: k,
-        }
+        Ok(Self { queue })
     }
-    pub fn push(&self, value: AlgloboTransaction) {
-        let mut data = self.data.lock().expect("poison");
-        while data.len() == self.max {
-            data = self.cv_full.wait(data).expect("poison");
-        }
-        data.push_back(value);
-        self.cv_empty.notify_one()
+
+    pub fn load_processed_ids(
+        failed_file_path: &str,
+        processed_file_path: &str,
+    ) -> Result<HashSet<u32>> {
+        let mut processed = HashSet::new();
+        Self::try_get_ids(failed_file_path, &mut processed)?;
+        Self::try_get_ids(processed_file_path, &mut processed)?;
+        Ok(processed)
     }
-    pub fn pop_front(&self) -> Option<AlgloboTransaction> {
-        let mut cola = self.data.lock().expect("poison");
-        cola.pop_front()
+
+    /// Tries to load IDs from the specified path into the processed set.
+    ///
+    /// This function will not fail if the file does not exist or cannot be
+    /// read, but could fail if the file cannot be deserialized correctly.
+    pub fn try_get_ids(path: &str, processed: &mut HashSet<u32>) -> Result<()> {
+        if let Ok(mut reader) = Reader::from_path(path) {
+            for result in reader.deserialize() {
+                let record: AlgloboTransaction = result?;
+                processed.insert(record.id);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn pop(&self) -> Option<AlgloboTransaction> {
+        self.queue.pop_front()
     }
 }

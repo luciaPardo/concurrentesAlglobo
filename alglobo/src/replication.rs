@@ -18,4 +18,13 @@ impl<L: LeaderElection> Replication<L> {
     pub fn wait_until_becoming_leader(&mut self) {
         self.leader_election_strategy.wait_until_becoming_leader()
     }
+
+    pub fn has_finished(&self) -> bool {
+        self.leader_election_strategy.has_finished()
+    }
+
+    /// Sends a graceful quit message to each replica.
+    pub fn graceful_quit(&mut self) {
+        self.leader_election_strategy.graceful_quit();
+    }
 }

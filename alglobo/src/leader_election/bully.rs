@@ -1,5 +1,5 @@
 use std::net::UdpSocket;
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -159,9 +159,13 @@ impl BullyLeaderElection {
                     println!("[{}] recibí Pong de {}", self.id, id_from);
                     *self.got_pong.0.lock().unwrap() = Some(id_from);
                 }
+                ControlMessage::GracefulQuit => {
+                    *self.stop.0.lock().unwrap() = true;
+                    break;
+                }
             }
         }
-        *self.stop.0.lock().unwrap() = false;
+        *self.stop.0.lock().unwrap() = true;
         self.stop.1.notify_all();
         println!("[{}] Responder finished", self.id);
     }
@@ -186,6 +190,9 @@ impl LeaderElection for BullyLeaderElection {
     fn wait_until_becoming_leader(&mut self) {
         while !self.is_leader() {
             std::thread::sleep(LEADER_HEALTH_CHECK_TIMEOUT);
+            if self.has_finished() {
+                break;
+            }
             println!("checking if current leader is healthy");
 
             let mut got_pong = self.got_pong.0.lock().unwrap();
@@ -210,6 +217,7 @@ impl LeaderElection for BullyLeaderElection {
                 _ => false,
             };
             drop(got_pong);
+
             if find_new_leader {
                 self.find_new_leader();
             }
@@ -218,5 +226,26 @@ impl LeaderElection for BullyLeaderElection {
 
     fn find_new_leader(&mut self) {
         self.find_new()
+    }
+
+    fn has_finished(&self) -> bool {
+        *self.stop.0.lock().unwrap()
+    }
+
+    fn graceful_quit(&mut self) {
+        *self.stop.0.lock().unwrap() = true;
+
+        for replica_id in 0..REPLICAS {
+            if replica_id == self.id {
+                continue;
+            }
+
+            self.socket
+                .send_to(
+                    &ControlMessage::GracefulQuit.to_bytes(self.id),
+                    id_to_ctrladdr(replica_id),
+                )
+                .unwrap();
+        }
     }
 }

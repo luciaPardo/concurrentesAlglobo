@@ -1,13 +1,9 @@
-// Actor: Hotel
-
-use std::{collections::HashMap, io::Read, sync::Arc};
-
-use actix::dev::MessageResponse;
 use actix::{Actor, Context, Handler};
-use helpers::protocol::{self, Protocol};
-use helpers::TransactionMessage;
-use tokio::io::AsyncReadExt;
+use std::{collections::HashMap, sync::Arc};
 use tokio::net::TcpListener;
+
+use helpers::protocol::Protocol;
+use helpers::TransactionMessage;
 
 enum TransactionState {
     Accepted { client: String },

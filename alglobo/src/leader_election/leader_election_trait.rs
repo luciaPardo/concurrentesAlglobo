@@ -13,6 +13,12 @@ pub trait LeaderElection {
     /// If the calling thread was the current leader this method
     /// will panic.
     fn find_new_leader(&mut self);
+
+    /// Indicates to all replicas that there is no more work to do.
+    fn graceful_quit(&mut self);
+
+    /// Returns true if there is no more work to do (graceful quit)
+    fn has_finished(&self) -> bool;
 }
 
 pub trait LeaderElectionController {

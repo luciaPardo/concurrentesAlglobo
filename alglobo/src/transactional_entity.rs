@@ -1,14 +1,15 @@
-use helpers::{alglobo_transaction::AlgloboTransaction, protocol::Protocol};
 use tokio::net::TcpStream;
 
-pub struct AirlineClient {
+use helpers::{alglobo_transaction::AlgloboTransaction, protocol::Protocol};
+
+pub struct TransactionalEntity {
     protocol: Protocol,
 }
 
-impl AirlineClient {
-    pub async fn new() -> Self {
+impl TransactionalEntity {
+    pub async fn new(host: &str) -> Self {
         Self {
-            protocol: Protocol::new(TcpStream::connect("0.0.0.0:9998").await.unwrap()),
+            protocol: Protocol::new(TcpStream::connect(host).await.unwrap()),
         }
     }
 
