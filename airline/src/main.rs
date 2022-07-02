@@ -1,7 +1,10 @@
 use actix::{Actor, Context, Handler};
+use core::time;
 use helpers::entity_main::run_entity;
+use helpers::event_protocol::{self, EventProtocol};
 use helpers::TransactionMessage;
 use std::collections::HashMap;
+use std::time::SystemTime;
 use tokio::net::TcpListener;
 
 enum TransactionState {
@@ -45,6 +48,7 @@ impl Handler<TransactionMessage> for Airline {
                 if transaction.client == "falla_airline" {
                     return Ok(Some(false));
                 }
+                let sys_time = SystemTime::now();
                 self.transaction_log.insert(
                     transaction.id,
                     TransactionState::Accepted {

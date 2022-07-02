@@ -5,8 +5,13 @@ mod queue;
 mod replication;
 mod transactional_entity;
 
-use std::{error::Error, time::Duration};
+use std::{
+    error::Error,
+    time::{Duration, SystemTime},
+};
 
+use actix_rt::net::TcpStream;
+use helpers::{event::Event, event_protocol::EventProtocol};
 use leader_election::bully::BullyLeaderElection;
 use output_logger::OutputLogger;
 use payments_queue::PaymentsQueue;
@@ -16,6 +21,7 @@ use transactional_entity::TransactionalEntity;
 const HOTEL_HOST: &str = "0.0.0.0:9999";
 const AIRLINE_HOST: &str = "0.0.0.0:9998";
 const BANK_HOST: &str = "0.0.0.0:9997";
+const STATS_HOST: &str = "0.0.0.0:9996";
 
 #[actix_rt::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -65,10 +71,12 @@ async fn replica_main() -> Result<(), Box<dyn Error>> {
     let mut hotel = TransactionalEntity::new(HOTEL_HOST).await;
     let mut airline = TransactionalEntity::new(AIRLINE_HOST).await;
     let mut bank = TransactionalEntity::new(BANK_HOST).await;
+    let socket_event = TcpStream::connect(STATS_HOST).await.unwrap();
+    let mut event_protocol = EventProtocol::new(socket_event);
 
     while let Some(tx) = payments_queue.pop() {
         std::thread::sleep(Duration::from_millis(1000));
-
+        let payment_time = SystemTime::now();
         if !hotel.create_transaction(&tx).await {
             println!("Hotel did not like transaction {}", tx.id);
             logger.log_failed(&tx);
@@ -93,6 +101,16 @@ async fn replica_main() -> Result<(), Box<dyn Error>> {
         bank.commit(tx.id).await;
 
         println!("Transaction {} approved", tx.id);
+        let new_sys_time = SystemTime::now();
+        let difference = new_sys_time
+            .duration_since(payment_time)
+            .expect("Clock Error")
+            .as_millis();
+        event_protocol
+            .send_event(Event::PaymentSuccess {
+                duration: difference as u32,
+            })
+            .await;
         logger.log_success(&tx);
     }
     println!("All payments have been processed");

@@ -1,0 +1,4 @@
+id,client,hotel_price,airline_price
+4,falla_banco,25,10
+5,falla_airline,25,10
+6,falla_hotel,25,10
