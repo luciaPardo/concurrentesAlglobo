@@ -1,13 +1,8 @@
 use actix::{Actor, Context, Handler};
-use std::{collections::HashMap, sync::Arc};
-use helpers::protocol::{self, Protocol};
-use helpers::TransactionMessage;
 use helpers::entity_main::run_entity;
-use tokio::io::AsyncReadExt;
+use helpers::TransactionMessage;
+use std::collections::HashMap;
 use tokio::net::TcpListener;
-
-
-
 
 enum TransactionState {
     Accepted { client: String },

@@ -1,11 +1,7 @@
-use std::{collections::HashMap, io::Read, sync::Arc};
-
-use actix::dev::MessageResponse;
 use actix::{Actor, Context, Handler};
 use helpers::entity_main::run_entity;
-use helpers::protocol::{self, Protocol};
 use helpers::TransactionMessage;
-use tokio::io::AsyncReadExt;
+use std::collections::HashMap;
 use tokio::net::TcpListener;
 
 enum TransactionState {

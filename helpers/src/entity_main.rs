@@ -1,13 +1,13 @@
-use std::{collections::HashMap, io::Read, sync::Arc};
-
-use actix::dev::MessageResponse;
-use actix::{Actor, Context, Handler};
 use crate::protocol::Protocol;
 use crate::TransactionMessage;
-use tokio::io::AsyncReadExt;
+use actix::{Actor, Handler};
+use std::sync::Arc;
 use tokio::net::TcpListener;
 
-pub async fn run_entity< E: Actor<Context = actix::Context<E>> + Handler<TransactionMessage> >(listener: TcpListener, entity: E){
+pub async fn run_entity<E: Actor<Context = actix::Context<E>> + Handler<TransactionMessage>>(
+    listener: TcpListener,
+    entity: E,
+) {
     let addr = Arc::new(entity.start());
     let mut handles = Vec::new();
     while let Ok((stream, _)) = listener.accept().await {
