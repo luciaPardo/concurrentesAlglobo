@@ -1,10 +1,7 @@
-use std::{collections::HashMap, io::Read, sync::Arc};
-
-use actix::dev::MessageResponse;
 use actix::{Actor, Context, Handler};
-use helpers::protocol::{self, Protocol};
+use helpers::entity_main::run_entity;
 use helpers::TransactionMessage;
-use tokio::io::AsyncReadExt;
+use std::collections::HashMap;
 use tokio::net::TcpListener;
 
 enum TransactionState {
@@ -94,33 +91,5 @@ async fn main() {
     let listener = TcpListener::bind("0.0.0.0:9998")
         .await
         .expect("Could not open port 9998");
-    let mut handles = Vec::new();
-    let airline = Airline::new();
-    let addr = Arc::new(airline.start());
-
-    while let Ok((stream, _)) = listener.accept().await {
-        let addr = addr.clone();
-        let mut protocol = Protocol::new(stream);
-        handles.push(actix_rt::spawn(async move {
-            loop {
-                let message = protocol.receive().await;
-                if let Some(message) = message {
-                    if let Ok(Some(result)) = addr.send(message).await.unwrap() {
-                        if result {
-                            protocol.send_ok().await;
-                        } else {
-                            protocol.send_failure().await;
-                        }
-                    }
-                } else {
-                    println!("Client disconnected");
-                    break;
-                }
-            }
-        }))
-    }
-
-    for handle in handles {
-        handle.await.ok();
-    }
+    run_entity(listener, Airline::new()).await;
 }

@@ -1,9 +1,8 @@
 use actix::{Actor, Context, Handler};
-use std::{collections::HashMap, sync::Arc};
-use tokio::net::TcpListener;
-
-use helpers::protocol::Protocol;
+use helpers::entity_main::run_entity;
 use helpers::TransactionMessage;
+use std::collections::HashMap;
+use tokio::net::TcpListener;
 
 enum TransactionState {
     Accepted { client: String },
@@ -94,35 +93,5 @@ async fn main() {
     let listener = TcpListener::bind("0.0.0.0:9999")
         .await
         .expect("Could not open port 9999");
-    let mut handles = Vec::new();
-    let hotel = Hotel::new();
-    let addr = Arc::new(hotel.start());
-
-    while let Ok((stream, _)) = listener.accept().await {
-        let addr = addr.clone();
-        let mut protocol = Protocol::new(stream);
-        handles.push(actix_rt::spawn(async move {
-            loop {
-                let message = protocol.receive().await;
-                if let Some(message) = message {
-                    if let Ok(Some(result)) = addr.send(message).await.unwrap() {
-                        if result {
-                            println!("sending ok");
-                            protocol.send_ok().await;
-                        } else {
-                            println!("sending failure");
-                            protocol.send_failure().await;
-                        }
-                    }
-                } else {
-                    println!("Client disconnected");
-                    break;
-                }
-            }
-        }))
-    }
-
-    for handle in handles {
-        handle.await.ok();
-    }
+    run_entity(listener, Hotel::new()).await;
 }

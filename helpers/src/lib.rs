@@ -1,5 +1,6 @@
 extern crate actix;
 pub mod alglobo_transaction;
+pub mod entity_main;
 pub mod protocol;
 use actix::Message;
 use alglobo_transaction::AlgloboTransaction;
