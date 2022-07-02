@@ -21,7 +21,7 @@ const BANK_HOST: &str = "0.0.0.0:9997";
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = std::env::args().collect::<Vec<String>>();
     let replica_id = if args.len() == 1 {
-        0u32
+        0u8
     } else if args.len() == 2 {
         args[1]
             .parse()
@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     } else {
         panic!("Usage: ./alglobo [replica id]");
     };
-    let mut replication_manager = Replication::new(BullyLeaderElection::new(replica_id));
+    let mut replication_manager = Replication::new(BullyLeaderElection::new(replica_id).unwrap());
     while !replication_manager.has_finished() {
         if replication_manager.is_leader() {
             println!(
@@ -93,7 +93,7 @@ async fn replica_main() -> Result<(), Box<dyn Error>> {
         bank.commit(tx.id).await;
 
         println!("Transaction {} approved", tx.id);
-        logger.log_success(&tx);   
+        logger.log_success(&tx);
     }
     println!("All payments have been processed");
     Ok(())

@@ -1,190 +1,248 @@
-use std::net::UdpSocket;
-use std::sync::{Arc, Condvar, Mutex};
-use std::thread;
-use std::time::Duration;
+use std::{
+    io::{ErrorKind, Result},
+    net::UdpSocket,
+    ops::Deref,
+    thread::{self, JoinHandle},
+    time::{Duration, SystemTime},
+};
 
-use super::control_message::ControlMessage;
 use super::leader_election_trait::LeaderElection;
+use super::{
+    atomic_value::AtomicValue,
+    control_message::{ControlMessage, PeerId},
+};
 
-fn id_to_ctrladdr(id: u32) -> String {
-    "127.0.0.1:1234".to_owned() + &*id.to_string()
+const BASE_PEER_PORT: u16 = 27000;
+
+const RECV_TIMEOUT: Duration = Duration::from_secs(1);
+const LEADER_HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(1);
+const LEADER_ELECTION_TIMEOUT: Duration = Duration::from_secs(10);
+
+const MIN_PEER_ID: PeerId = 1;
+const MAX_PEER_ID: PeerId = 30;
+
+pub struct BullyLeaderElectionInner {
+    id: PeerId,
+    socket: UdpSocket,
+    leader_id: AtomicValue<Option<PeerId>>,
+    got_ok: AtomicValue<bool>,
+    got_pong: AtomicValue<Option<PeerId>>,
+    stop: AtomicValue<bool>,
+    current_state: AtomicValue<State>,
 }
 
-const REPLICAS: u32 = 4;
-const TIMEOUT: Duration = Duration::from_secs(10);
-const LEADER_HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(1);
-
 pub struct BullyLeaderElection {
-    id: u32,
-    socket: UdpSocket,
-    leader_id: Arc<(Mutex<Option<u32>>, Condvar)>,
-    got_ok: Arc<(Mutex<bool>, Condvar)>,
-    got_pong: Arc<(Mutex<Option<u32>>, Condvar)>,
-    stop: Arc<(Mutex<bool>, Condvar)>,
+    inner: BullyLeaderElectionInner,
+    responder_thread: Option<JoinHandle<()>>,
+}
+
+impl Deref for BullyLeaderElection {
+    type Target = BullyLeaderElectionInner;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum State {
+    Idle,
+    FindingLeader { since: SystemTime },
+    WaitingForCoordinator,
+}
+
+impl State {
+    pub fn finding_leader_now() -> Self {
+        Self::FindingLeader {
+            since: SystemTime::now(),
+        }
+    }
 }
 
 impl BullyLeaderElection {
-    pub fn new(id: u32) -> BullyLeaderElection {
-        let mut ret = BullyLeaderElection {
-            id,
-            socket: UdpSocket::bind(id_to_ctrladdr(id)).unwrap(),
-            leader_id: Arc::new((Mutex::new(Some(id)), Condvar::new())),
-            got_ok: Arc::new((Mutex::new(false), Condvar::new())),
-            got_pong: Arc::new((Mutex::new(None), Condvar::new())),
-            stop: Arc::new((Mutex::new(false), Condvar::new())),
+    pub fn new(id: PeerId) -> Result<BullyLeaderElection> {
+        let inner = BullyLeaderElectionInner::new(id)?;
+        let mut thread_inner = inner.clone();
+        let responder_thread = thread::spawn(move || thread_inner.responder());
+        let mut ret = Self {
+            inner,
+            responder_thread: Some(responder_thread),
         };
 
-        let mut clone = ret.clone();
-        thread::spawn(move || clone.responder());
+        ret.find_new_leader();
+        Ok(ret)
+    }
+}
 
-        thread::sleep(Duration::from_secs(2));
-        ret.find_new();
-        ret
+impl BullyLeaderElectionInner {
+    pub fn new(id: PeerId) -> Result<BullyLeaderElectionInner> {
+        let socket = UdpSocket::bind(Self::build_peer_address(id))?;
+        socket
+            .set_read_timeout(Some(RECV_TIMEOUT))
+            .expect("Could not set socket as non-blocking.");
+
+        Ok(Self {
+            id,
+            socket,
+            leader_id: AtomicValue::new(None),
+            got_ok: AtomicValue::new(false),
+            got_pong: AtomicValue::new(None),
+            stop: AtomicValue::new(false),
+            current_state: AtomicValue::new(State::Idle),
+        })
     }
 
-    fn am_i_leader(&self) -> bool {
-        self.get_leader_id() == self.id
-    }
-
-    fn get_leader_id(&self) -> u32 {
+    fn get_leader_id(&self) -> PeerId {
         self.leader_id
-            .1
-            .wait_while(self.leader_id.0.lock().unwrap(), |leader_id| {
-                leader_id.is_none()
-            })
-            .unwrap()
-            .unwrap()
-    }
-
-    fn find_new(&mut self) {
-        if *self.stop.0.lock().unwrap() {
-            return;
-        }
-        if self.leader_id.0.lock().unwrap().is_none() {
-            // ya esta buscando lider
-            return;
-        }
-        println!("[{}] buscando lider", self.id);
-        *self.got_ok.0.lock().unwrap() = false;
-        *self.leader_id.0.lock().unwrap() = None;
-        self.send_election();
-        let got_ok =
-            self.got_ok
-                .1
-                .wait_timeout_while(self.got_ok.0.lock().unwrap(), TIMEOUT, |got_it| !*got_it);
-        if !*got_ok.unwrap().0 {
-            self.make_me_leader()
-        } else {
-            self.leader_id
-                .1
-                .wait_while(self.leader_id.0.lock().unwrap(), |leader_id| {
-                    leader_id.is_none()
-                })
-                .expect("poison")
-                .expect("poison2");
-        }
-    }
-
-    fn id_to_msg(&self, header: u8) -> Vec<u8> {
-        let mut msg = vec![header];
-        msg.extend_from_slice(&self.id.to_le_bytes());
-        msg
-    }
-
-    fn send_election(&self) {
-        // P envía el mensaje ELECTION a todos los procesos que tengan número mayor
-        let msg = self.id_to_msg(b'E');
-        for peer_id in (self.id + 1)..REPLICAS {
-            self.socket.send_to(&msg, id_to_ctrladdr(peer_id)).unwrap();
-        }
-    }
-
-    fn make_me_leader(&self) {
-        // El nuevo coordinador se anuncia con un mensaje COORDINATOR
-        let mut leader_lock = self.leader_id.0.lock().unwrap();
-        println!("[{}] me anuncio como lider", self.id);
-        let msg = self.id_to_msg(b'C');
-        for peer_id in 0..REPLICAS {
-            if peer_id != self.id {
-                self.socket.send_to(&msg, id_to_ctrladdr(peer_id)).unwrap();
-            }
-        }
-        *leader_lock = Some(self.id);
+            .wait_while(|leader_id| leader_id.is_none())
+            .expect("Mutex poisoned")
     }
 
     fn responder(&mut self) {
-        println!("[{}] Responder started", self.id);
-        while !*self.stop.0.lock().unwrap() {
-            let mut buf = [0; ControlMessage::size_of()];
-            let (size, _) = self.socket.recv_from(&mut buf).unwrap();
-            let (message, id_from) = ControlMessage::from_bytes(&buf[0..size]);
-            if *self.stop.0.lock().unwrap() {
-                break;
-            }
-            println!(" Message : {:?}", message);
-            match message {
-                ControlMessage::Ok => {
-                    println!("[{}] recibí OK de {}", self.id, id_from);
-                    *self.got_ok.0.lock().unwrap() = true;
-                    self.got_ok.1.notify_all();
-                }
-                ControlMessage::Election => {
-                    println!("[{}] recibí Election de {}", self.id, id_from);
-                    if id_from < self.id {
-                        self.socket
-                            .send_to(
-                                &ControlMessage::Ok.to_bytes(self.id),
-                                id_to_ctrladdr(id_from),
-                            )
-                            .unwrap();
-                        let mut me = self.clone();
-                        thread::spawn(move || me.find_new());
-                    }
-                }
-                ControlMessage::Coordinator => {
-                    println!("[{}] recibí nuevo coordinador {}", self.id, id_from);
-                    *self.leader_id.0.lock().unwrap() = Some(id_from);
-                    self.leader_id.1.notify_all();
-                }
-                ControlMessage::Ping => {
-                    println!("[{}] recibí Ping de {}", self.id, id_from);
-                    self.socket
-                        .send_to(
-                            &ControlMessage::Pong.to_bytes(self.id),
-                            id_to_ctrladdr(id_from),
-                        )
-                        .unwrap();
-                }
-                ControlMessage::Pong => {
-                    println!("[{}] recibí Pong de {}", self.id, id_from);
-                    *self.got_pong.0.lock().unwrap() = Some(id_from);
-                }
-                ControlMessage::GracefulQuit => {
-                    *self.stop.0.lock().unwrap() = true;
+        println!("Responder thread started");
+        while !*self.stop.load() {
+            // Ticks are not spaced evenly, but it is guaranteed that ticks are
+            // not spaced for more than READ_TIMEOUT.
+            self.on_tick();
+
+            // Try to fetch a new message.
+            match self.recv_message() {
+                Ok(Some((message, peer_from))) => self.process_message(message, peer_from),
+                Ok(None) => continue,
+                Err(e) => {
+                    println!("Error on responder thread: {:?}", e);
                     break;
                 }
             }
         }
-        *self.stop.0.lock().unwrap() = true;
-        self.stop.1.notify_all();
-        println!("[{}] Responder finished", self.id);
+        self.stop.store(true);
+        println!("Responder thread finished");
     }
 
-    fn clone(&self) -> BullyLeaderElection {
-        BullyLeaderElection {
+    /// Processes a message received from a peer.
+    ///
+    /// This method should not block for a long time.
+    fn process_message(&self, message: ControlMessage, peer_from: PeerId) {
+        println!("Processing message {:?} from {}", message, peer_from);
+        let current_state = *self.current_state.load();
+        match message {
+            ControlMessage::Ok => match current_state {
+                State::FindingLeader { .. } => {
+                    self.current_state.store(State::WaitingForCoordinator)
+                }
+                _ => {
+                    println!(
+                        "Received OK from {} during an invalid state, ignoring...",
+                        peer_from
+                    );
+                }
+            },
+            ControlMessage::Election => {
+                if peer_from < self.id {
+                    self.send_message(peer_from, ControlMessage::Ok);
+                    if !matches!(current_state, State::FindingLeader { .. }) {
+                        self.current_state.store(State::finding_leader_now());
+                    }
+                }
+            }
+            ControlMessage::Coordinator => {
+                self.leader_id.store(Some(peer_from));
+                self.current_state.store(State::Idle);
+            }
+            ControlMessage::Ping => {
+                self.send_message(peer_from, ControlMessage::Pong);
+            }
+            ControlMessage::Pong => {
+                self.got_pong.store(Some(peer_from));
+            }
+            ControlMessage::GracefulQuit => {
+                self.stop.store(true);
+            }
+        }
+    }
+
+    fn on_tick(&self) {
+        let current_state = *self.current_state.load();
+        if let State::FindingLeader { since } = current_state {
+            if SystemTime::now().duration_since(since).unwrap() > LEADER_ELECTION_TIMEOUT {
+                // We were finding a leader for more than LEADER_ELECTION_TIMEOUT
+                // => Finish the election by declaring ourselves as coordinator.
+                println!("[{}] Announcing myself as new coordinator", self.id);
+                self.broadcast_message(ControlMessage::Coordinator);
+                self.leader_id.store(Some(self.id));
+                self.current_state.store(State::Idle);
+            }
+        }
+    }
+
+    /// Waits for a new message during RECV_TIMEOUT seconds.
+    fn recv_message(&self) -> Result<Option<(ControlMessage, PeerId)>> {
+        let mut buf = [0; ControlMessage::size_of()];
+
+        let (size, _) = match self.socket.recv_from(&mut buf) {
+            Err(e) if e.kind() == ErrorKind::WouldBlock => return Ok(None),
+            r => r?,
+        };
+
+        if size != ControlMessage::size_of() {
+            // we received less bytes than needed for a control message???
+            println!(
+                "[{}] RECV MESSAGE: Invalid message received, ignoring...",
+                self.id
+            );
+            Ok(None)
+        } else {
+            Ok(Some(ControlMessage::from_bytes(&buf[0..size])))
+        }
+    }
+
+    fn send_message(&self, dst_peer: PeerId, message: ControlMessage) {
+        self.socket
+            .send_to(
+                &message.to_bytes(self.id),
+                Self::build_peer_address(dst_peer),
+            )
+            .unwrap();
+    }
+
+    fn broadcast_message(&self, message: ControlMessage) {
+        self.broadcast_message_if(message, |_| true);
+    }
+
+    fn broadcast_message_if<F: Fn(PeerId) -> bool>(&self, message: ControlMessage, predicate: F) {
+        for peer_id in MIN_PEER_ID..=MAX_PEER_ID {
+            if peer_id == self.id {
+                continue;
+            }
+
+            if predicate(peer_id) {
+                self.send_message(peer_id, message);
+            }
+        }
+    }
+
+    fn build_peer_address(peer_id: PeerId) -> String {
+        format!("127.0.0.1:{}", BASE_PEER_PORT + (peer_id as u16))
+    }
+}
+
+impl Clone for BullyLeaderElectionInner {
+    fn clone(&self) -> Self {
+        Self {
             id: self.id,
             socket: self.socket.try_clone().unwrap(),
             leader_id: self.leader_id.clone(),
             got_ok: self.got_ok.clone(),
             got_pong: self.got_pong.clone(),
             stop: self.stop.clone(),
+            current_state: self.current_state.clone(),
         }
     }
 }
 
 impl LeaderElection for BullyLeaderElection {
     fn is_leader(&self) -> bool {
-        self.am_i_leader()
+        self.get_leader_id() == self.id
     }
 
     fn wait_until_becoming_leader(&mut self) {
@@ -194,58 +252,45 @@ impl LeaderElection for BullyLeaderElection {
                 break;
             }
             println!("checking if current leader is healthy");
-
-            let mut got_pong = self.got_pong.0.lock().unwrap();
-            *got_pong = None;
-            self.socket
-                .send_to(
-                    &ControlMessage::Ping.to_bytes(self.id),
-                    id_to_ctrladdr(self.get_leader_id()),
-                )
-                .unwrap();
-
+            self.got_pong.store(None);
+            self.send_message(self.get_leader_id(), ControlMessage::Ping);
             println!("wait for leader response");
-            let (got_pong, _) = self
+            let got_pong = self
                 .got_pong
-                .1
-                .wait_timeout_while(got_pong, LEADER_HEALTH_CHECK_TIMEOUT, |e| e.is_none())
-                .unwrap();
+                .wait_timeout_while(LEADER_HEALTH_CHECK_TIMEOUT, |e| e.is_none());
 
-            let find_new_leader = match *got_pong {
-                Some(e) if e != self.get_leader_id() => true,
-                None => true,
-                _ => false,
-            };
-            drop(got_pong);
-
-            if find_new_leader {
+            if !matches!(&got_pong, Some(e) if e.unwrap() == self.get_leader_id()) {
+                drop(got_pong);
                 self.find_new_leader();
             }
         }
     }
 
     fn find_new_leader(&mut self) {
-        self.find_new()
+        if let State::FindingLeader { .. } = *self.current_state.load() {
+            return;
+        }
+
+        self.current_state.store(State::finding_leader_now());
+        self.leader_id.store(None);
+        self.broadcast_message_if(ControlMessage::Election, |peer_id| self.id < peer_id);
     }
 
     fn has_finished(&self) -> bool {
-        *self.stop.0.lock().unwrap()
+        *self.stop.load()
     }
 
     fn graceful_quit(&mut self) {
-        *self.stop.0.lock().unwrap() = true;
+        self.stop.store(true);
+        self.broadcast_message(ControlMessage::GracefulQuit);
+    }
+}
 
-        for replica_id in 0..REPLICAS {
-            if replica_id == self.id {
-                continue;
-            }
-
-            self.socket
-                .send_to(
-                    &ControlMessage::GracefulQuit.to_bytes(self.id),
-                    id_to_ctrladdr(replica_id),
-                )
-                .unwrap();
+impl Drop for BullyLeaderElection {
+    fn drop(&mut self) {
+        if let Some(handle) = self.responder_thread.take() {
+            self.stop.store(true);
+            let _ = handle.join();
         }
     }
 }

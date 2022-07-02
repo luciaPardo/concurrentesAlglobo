@@ -1,4 +1,6 @@
-#[derive(Debug)]
+pub type PeerId = u8;
+
+#[derive(Copy, Clone, Debug)]
 pub enum ControlMessage {
     Ok,
     Election,
@@ -9,7 +11,7 @@ pub enum ControlMessage {
 }
 
 impl ControlMessage {
-    pub fn to_bytes(&self, id: u32) -> Vec<u8> {
+    pub fn to_bytes(self, id: PeerId) -> Vec<u8> {
         let opcode = match self {
             ControlMessage::Ok => b'O',
             ControlMessage::Election => b'E',
@@ -24,7 +26,7 @@ impl ControlMessage {
         result
     }
 
-    pub fn from_bytes(data: &[u8]) -> (ControlMessage, u32) {
+    pub fn from_bytes(data: &[u8]) -> (ControlMessage, PeerId) {
         let opcode = match data[0] {
             b'O' => ControlMessage::Ok,
             b'E' => ControlMessage::Election,
@@ -35,11 +37,11 @@ impl ControlMessage {
             e => panic!("Invalid opcode: {:?}", e),
         };
 
-        let id = u32::from_le_bytes(data[1..].try_into().unwrap());
+        let id = PeerId::from_le_bytes(data[1..].try_into().unwrap());
         (opcode, id)
     }
 
     pub const fn size_of() -> usize {
-        5
+        1 + std::mem::size_of::<PeerId>()
     }
 }
