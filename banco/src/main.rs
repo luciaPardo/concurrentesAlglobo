@@ -3,6 +3,7 @@ use std::{collections::HashMap, io::Read, sync::Arc};
 use actix::dev::MessageResponse;
 use actix::{Actor, Context, Handler};
 use helpers::alglobo_transaction::AlgloboTransaction;
+use helpers::entity_main::run_entity;
 use helpers::protocol::{self, Protocol};
 use helpers::TransactionMessage;
 use tokio::io::AsyncReadExt;
@@ -61,7 +62,6 @@ impl Handler<TransactionMessage> for Bank {
             TransactionMessage::Abort { transaction_id } => {
                 self.transaction_log
                     .insert(transaction_id, TransactionState::Abort);
-                
             }
             TransactionMessage::Commit { transaction_id } => {
                 match self.transaction_log.get(&transaction_id) {
@@ -84,8 +84,7 @@ impl Handler<TransactionMessage> for Bank {
                     Some(TransactionState::Commit) => {
                         // Mandar OK (ya commiteada)
                     }
-                    Some(TransactionState::Abort) => {
-                    }
+                    Some(TransactionState::Abort) => {}
                     None => {
                         // transaction id no existe???
                     }
@@ -102,34 +101,6 @@ impl Handler<TransactionMessage> for Bank {
 async fn main() {
     let listener = TcpListener::bind("0.0.0.0:9997")
         .await
-        .expect("Could not open port 9998");
-    let mut handles = Vec::new();
-    let bank = Bank::new();
-    let addr = Arc::new(bank.start());
-
-    while let Ok((stream, _)) = listener.accept().await {
-        let addr = addr.clone();
-        let mut protocol = Protocol::new(stream);
-        handles.push(actix_rt::spawn(async move {
-            loop {
-                let message = protocol.receive().await;
-                if let Some(message) = message {
-                    if let Ok(Some(result)) = addr.send(message).await.unwrap() {
-                        if result {
-                            protocol.send_ok().await;
-                        } else {
-                            protocol.send_failure().await;
-                        }
-                    }
-                } else {
-                    println!("Client disconnected");
-                    break;
-                }
-            }
-        }))
-    }
-
-    for handle in handles {
-        handle.await.ok();
-    }
+        .expect("Could not open port 9997");
+    run_entity(listener, Bank::new()).await;
 }
