@@ -44,11 +44,9 @@ impl Handler<Event> for Stats {
                 duration_ms,
             } => {
                 println!("Entity : {} took : {}", entity, duration_ms);
-                return;
             }
             Event::TxFailure { entity, reason } => {
                 println!("Entity : {} failed because : {}", entity, reason);
-                return;
             }
             Event::PaymentSuccess { duration } => {
                 self.tot_time += duration;
@@ -62,7 +60,6 @@ impl Handler<Event> for Stats {
             Event::PaymentFailed { reason } => {
                 println!("Payment Failed because: {}", reason)
             }
-            _ => panic!("Invalid"),
         }
     }
 }

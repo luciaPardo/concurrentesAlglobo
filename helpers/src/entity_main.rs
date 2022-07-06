@@ -18,10 +18,13 @@ pub async fn run_entity<E: Actor<Context = actix::Context<E>> + Handler<Transact
                 let message = protocol.receive().await;
                 if let Some(message) = message {
                     if let Ok(Some(result)) = addr.send(message).await.unwrap() {
+                        // We don't really care if we could send the response or not. At this point
+                        // there is nothing we can do if the client does not want to hear our
+                        // response.
                         if result {
-                            protocol.send_ok().await;
+                            let _ = protocol.send_ok().await;
                         } else {
-                            protocol.send_failure().await;
+                            let _ = protocol.send_failure().await;
                         }
                     }
                 } else {

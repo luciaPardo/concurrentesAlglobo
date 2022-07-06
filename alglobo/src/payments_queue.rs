@@ -1,22 +1,20 @@
 use csv::Reader;
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::io::Result;
 
-use crate::queue::Queue;
 use helpers::alglobo_transaction::AlgloboTransaction;
 
 pub struct PaymentsQueue {
-    queue: Queue,
+    queue: VecDeque<AlgloboTransaction>,
 }
 
 impl PaymentsQueue {
     pub fn new(
-        size: usize,
         pending_payments_file: &str,
         processed_file_path: &str,
         failed_file_path: &str,
     ) -> Result<Self> {
-        let queue = Queue::new(size);
+        let mut queue = VecDeque::new();
 
         let processed_ids = Self::load_processed_ids(failed_file_path, processed_file_path)?;
 
@@ -26,7 +24,7 @@ impl PaymentsQueue {
             if processed_ids.contains(&record.id) {
                 continue;
             } else {
-                queue.push(record);
+                queue.push_back(record);
             }
         }
 
@@ -65,7 +63,7 @@ impl PaymentsQueue {
         Ok(ignored_transactions)
     }
 
-    pub fn pop(&self) -> Option<AlgloboTransaction> {
+    pub fn pop(&mut self) -> Option<AlgloboTransaction> {
         self.queue.pop_front()
     }
 }

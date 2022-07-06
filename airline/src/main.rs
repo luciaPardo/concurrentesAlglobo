@@ -1,10 +1,7 @@
 use actix::{Actor, Context, Handler};
-use core::time;
 use helpers::entity_main::run_entity;
-use helpers::event_protocol::{self, EventProtocol};
 use helpers::TransactionMessage;
 use std::collections::HashMap;
-use std::time::SystemTime;
 use tokio::net::TcpListener;
 
 enum TransactionState {
@@ -48,7 +45,6 @@ impl Handler<TransactionMessage> for Airline {
                 if transaction.client == "falla_airline" {
                     return Ok(Some(false));
                 }
-                let sys_time = SystemTime::now();
                 self.transaction_log.insert(
                     transaction.id,
                     TransactionState::Accepted {
@@ -61,7 +57,6 @@ impl Handler<TransactionMessage> for Airline {
             TransactionMessage::Abort { transaction_id } => {
                 self.transaction_log
                     .insert(transaction_id, TransactionState::Abort);
-                // TODO: mandar Abort a AlGlobo
             }
             TransactionMessage::Commit { transaction_id } => {
                 match self.transaction_log.get(&transaction_id) {
@@ -74,16 +69,12 @@ impl Handler<TransactionMessage> for Airline {
                         self.transaction_log
                             .insert(transaction_id, TransactionState::Commit);
                     }
-                    Some(TransactionState::Commit) => {
-                        // Mandar OK (ya commiteada)
-                    }
-                    Some(TransactionState::Abort) => {}
-                    None => {
-                        // transaction id no existe???
-                    }
+                    Some(TransactionState::Commit) => { /* Already finished */ }
+                    Some(TransactionState::Abort) => { /* Already finished */ }
+                    _ => {}
                 }
             }
-            _ => panic!("Invalid"),
+            _ => {}
         }
 
         Ok(Some(true))

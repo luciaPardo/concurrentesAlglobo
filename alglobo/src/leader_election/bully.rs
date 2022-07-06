@@ -1,10 +1,15 @@
+extern crate rand;
+
 use std::{
+    collections::HashSet,
     io::{ErrorKind, Result},
     net::UdpSocket,
     ops::Deref,
     thread::{self, JoinHandle},
     time::{Duration, SystemTime},
 };
+
+use rand::Rng;
 
 use super::leader_election_trait::LeaderElection;
 use super::{
@@ -17,9 +22,13 @@ const BASE_PEER_PORT: u16 = 27000;
 const RECV_TIMEOUT: Duration = Duration::from_secs(1);
 const LEADER_HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(1);
 const LEADER_ELECTION_TIMEOUT: Duration = Duration::from_secs(10);
+const WAIT_FOR_LEADER_TIMEOUT: Duration = Duration::from_secs(15);
+const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(3);
 
 const MIN_PEER_ID: PeerId = 1;
 const MAX_PEER_ID: PeerId = 30;
+const MIN_TEMP_PEER_ID: PeerId = 32;
+const MAX_TEMP_PEER_ID: PeerId = 255;
 
 pub struct BullyLeaderElectionInner {
     id: PeerId,
@@ -60,8 +69,48 @@ impl State {
 }
 
 impl BullyLeaderElection {
-    pub fn new(id: PeerId) -> Result<BullyLeaderElection> {
-        let inner = BullyLeaderElectionInner::new(id)?;
+    pub fn discovery() -> Result<BullyLeaderElection> {
+        println!("[DISCOVERY] Trying to auto assign an id");
+        let mut rng = rand::thread_rng();
+        let mut retries_left = 10;
+        let inner = loop {
+            let random_id = rng.gen_range(MIN_TEMP_PEER_ID..=MAX_TEMP_PEER_ID);
+            if let Ok(inner) = BullyLeaderElectionInner::new(random_id) {
+                break inner;
+            }
+
+            retries_left -= 1;
+            if retries_left == 0 {
+                return Err(std::io::Error::new(ErrorKind::Other, "No available IDs"));
+            }
+        };
+
+        inner.broadcast_message(ControlMessage::Ping);
+        let mut connected_ids = HashSet::new();
+        let discovery_period_start = SystemTime::now();
+        while SystemTime::now()
+            .duration_since(discovery_period_start)
+            .unwrap()
+            < DISCOVERY_TIMEOUT
+        {
+            if let Some((ControlMessage::Pong, peer_from)) = inner.recv_message()? {
+                connected_ids.insert(peer_from);
+            }
+        }
+
+        for peer_id in (MIN_PEER_ID..=MAX_PEER_ID).rev() {
+            if !connected_ids.contains(&peer_id) {
+                if let Ok(new_inner) = BullyLeaderElectionInner::new(peer_id) {
+                    println!("[DISCOVERY] Auto-assigned id: {}", peer_id);
+                    return Self::new_from(new_inner);
+                }
+            }
+        }
+
+        Err(std::io::Error::new(ErrorKind::Other, "No available IDs"))
+    }
+
+    fn new_from(inner: BullyLeaderElectionInner) -> Result<BullyLeaderElection> {
         let mut thread_inner = inner.clone();
         let responder_thread = thread::spawn(move || thread_inner.responder());
         let mut ret = Self {
@@ -88,14 +137,16 @@ impl BullyLeaderElectionInner {
             got_ok: AtomicValue::new(false),
             got_pong: AtomicValue::new(None),
             stop: AtomicValue::new(false),
-            current_state: AtomicValue::new(State::Idle),
+            current_state: AtomicValue::new(State::finding_leader_now()),
         })
     }
 
     fn get_leader_id(&self) -> PeerId {
-        self.leader_id
-            .wait_while(|leader_id| leader_id.is_none())
-            .expect("Mutex poisoned")
+        let leader_id = self
+            .leader_id
+            .wait_timeout_while(WAIT_FOR_LEADER_TIMEOUT, |leader_id| leader_id.is_none())
+            .expect("Mutex poisoned");
+        leader_id.unwrap_or(self.id)
     }
 
     fn responder(&mut self) {
@@ -126,17 +177,11 @@ impl BullyLeaderElectionInner {
         println!("Processing message {:?} from {}", message, peer_from);
         let current_state = *self.current_state.load();
         match message {
-            ControlMessage::Ok => match current_state {
-                State::FindingLeader { .. } => {
+            ControlMessage::Ok => {
+                if let State::FindingLeader { .. } = current_state {
                     self.current_state.store(State::WaitingForCoordinator)
                 }
-                _ => {
-                    println!(
-                        "Received OK from {} during an invalid state, ignoring...",
-                        peer_from
-                    );
-                }
-            },
+            }
             ControlMessage::Election => {
                 if peer_from < self.id {
                     self.send_message(peer_from, ControlMessage::Ok);
@@ -283,6 +328,10 @@ impl LeaderElection for BullyLeaderElection {
     fn graceful_quit(&mut self) {
         self.stop.store(true);
         self.broadcast_message(ControlMessage::GracefulQuit);
+    }
+
+    fn get_current_id(&self) -> PeerId {
+        self.id
     }
 }
 

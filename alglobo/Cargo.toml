@@ -10,5 +10,6 @@ actix = "0.13.0"
 actix-rt = "2.7.0"
 helpers = { path = "../helpers" }
 csv = "1.1"
+rand = "0.8.5"
 serde = { version = "1", features = ["derive"] }
 tokio = "1.19"

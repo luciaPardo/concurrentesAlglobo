@@ -1,3 +1,5 @@
+use super::control_message::PeerId;
+
 pub trait LeaderElection {
     /// Returns true if this process is the current leader.
     /// This method may block the current thread if there is an election
@@ -19,6 +21,9 @@ pub trait LeaderElection {
 
     /// Returns true if there is no more work to do (graceful quit)
     fn has_finished(&self) -> bool;
+
+    /// Returns the Id of the current replica
+    fn get_current_id(&self) -> PeerId;
 }
 
 pub trait LeaderElectionController {

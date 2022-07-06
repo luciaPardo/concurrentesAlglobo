@@ -1,7 +1,6 @@
 mod leader_election;
 mod output_logger;
 mod payments_queue;
-mod queue;
 mod replication;
 mod transactional_entity;
 
@@ -12,7 +11,7 @@ use std::{
 
 use actix_rt::net::TcpStream;
 use helpers::{event::Event, event_protocol::EventProtocol};
-use leader_election::bully::BullyLeaderElection;
+use leader_election::{bully::BullyLeaderElection, leader_election_trait::LeaderElection};
 use output_logger::OutputLogger;
 use payments_queue::PaymentsQueue;
 use replication::Replication;
@@ -25,34 +24,18 @@ const STATS_HOST: &str = "0.0.0.0:9996";
 
 #[actix_rt::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let args = std::env::args().collect::<Vec<String>>();
-    let replica_id = if args.len() == 1 {
-        0u8
-    } else if args.len() == 2 {
-        args[1]
-            .parse()
-            .expect("Invalid replica id. Usage: ./alglobo [replica id]")
-    } else {
-        panic!("Usage: ./alglobo [replica id]");
-    };
-    let mut replication_manager = Replication::new(BullyLeaderElection::new(replica_id).unwrap());
+    let mut replication_manager = Replication::new(BullyLeaderElection::discovery().unwrap());
     while !replication_manager.has_finished() {
         if replication_manager.is_leader() {
             println!(
-                "[{}] Replica {} is the current leader.",
-                replica_id,
-                std::process::id()
+                "[{}] I am the current leader.",
+                replication_manager.get_current_id()
             );
-            let result = replica_main().await;
-            if result.is_ok() {
-                replication_manager.graceful_quit();
-            }
-            return result;
+            replica_main(&mut replication_manager).await?;
         } else {
             println!(
-                "[{}] Replica {} is not the leader.",
-                replica_id,
-                std::process::id()
+                "[{}] This replica is not the leader.",
+                replication_manager.get_current_id(),
             );
             replication_manager.wait_until_becoming_leader();
         }
@@ -61,21 +44,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn replica_main() -> Result<(), Box<dyn Error>> {
-    let payments_queue =
-        PaymentsQueue::new(1000, "./payments.csv", "./processed.csv", "./failed.csv")
+async fn replica_main(
+    manager: &mut Replication<impl LeaderElection>,
+) -> Result<(), Box<dyn Error>> {
+    let mut payments_queue =
+        PaymentsQueue::new("./payments.csv", "./processed.csv", "./failed.csv")
             .expect("Could not load payments file");
     let mut logger = OutputLogger::new("./failed.csv".into(), "./processed.csv".into())
         .expect("Cannot start transaction logger");
 
-    let mut hotel = TransactionalEntity::new(HOTEL_HOST).await;
-    let mut airline = TransactionalEntity::new(AIRLINE_HOST).await;
-    let mut bank = TransactionalEntity::new(BANK_HOST).await;
-    let socket_event = TcpStream::connect(STATS_HOST).await.unwrap();
+    let mut hotel = TransactionalEntity::new(HOTEL_HOST).await?;
+    let mut airline = TransactionalEntity::new(AIRLINE_HOST).await?;
+    let mut bank = TransactionalEntity::new(BANK_HOST).await?;
+    let socket_event = TcpStream::connect(STATS_HOST).await?;
     let mut event_protocol = EventProtocol::new(socket_event);
 
     while let Some(tx) = payments_queue.pop() {
-        std::thread::sleep(Duration::from_millis(1000));
+        if !manager.is_leader() {
+            // Leader has changed
+            return Ok(());
+        }
+
+        std::thread::sleep(Duration::from_millis(3000));
         let payment_time = SystemTime::now();
         if !hotel.create_transaction(&tx).await {
             println!("Hotel did not like transaction {}", tx.id);
@@ -114,5 +104,6 @@ async fn replica_main() -> Result<(), Box<dyn Error>> {
         logger.log_success(&tx);
     }
     println!("All payments have been processed");
+    manager.graceful_quit();
     Ok(())
 }
