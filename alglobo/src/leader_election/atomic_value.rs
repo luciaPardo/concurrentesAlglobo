@@ -27,6 +27,13 @@ impl<V> AtomicValue<V> {
         self.condition.notify_all();
     }
 
+    pub fn wait_while<F: FnMut(&mut V) -> bool>(&self, predicate: F) -> MutexGuard<V> {
+        let lock = self.value.lock().expect("Mutex poison");
+        self.condition
+            .wait_while(lock, predicate)
+            .expect("Mutex posion")
+    }
+
     pub fn wait_timeout_while<F: FnMut(&mut V) -> bool>(
         &self,
         timeout: Duration,

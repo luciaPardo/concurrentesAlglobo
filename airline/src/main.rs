@@ -42,6 +42,11 @@ impl Handler<TransactionMessage> for Airline {
         println!("[Airline] handle: {:?}", msg);
         match msg {
             TransactionMessage::Prepare { transaction } => {
+                if self.transaction_log.contains_key(&transaction.id) {
+                    // Transaction is already in the log, so it was already prepared.
+                    return Ok(Some(true));
+                }
+
                 if transaction.client == "falla_airline" {
                     return Ok(Some(false));
                 }

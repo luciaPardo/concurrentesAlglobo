@@ -43,8 +43,12 @@ impl Handler<TransactionMessage> for Hotel {
         println!("[HOTEL] handle: {:?}", msg);
         match msg {
             TransactionMessage::Prepare { transaction } => {
+                if self.transaction_log.contains_key(&transaction.id) {
+                    // Transaction is already in the log, so it was already prepared.
+                    return Ok(Some(true));
+                }
+
                 if transaction.client == "falla_hotel" {
-                    println!("fallo el hotel");
                     return Ok(Some(false));
                 }
                 self.transaction_log.insert(
@@ -59,7 +63,6 @@ impl Handler<TransactionMessage> for Hotel {
             TransactionMessage::Abort { transaction_id } => {
                 self.transaction_log
                     .insert(transaction_id, TransactionState::Abort);
-                // TODO: mandar Abort a AlGlobo
             }
             TransactionMessage::Commit { transaction_id } => {
                 match self.transaction_log.get(&transaction_id) {
@@ -72,13 +75,9 @@ impl Handler<TransactionMessage> for Hotel {
                         self.transaction_log
                             .insert(transaction_id, TransactionState::Commit);
                     }
-                    Some(TransactionState::Commit) => {
-                        // Mandar OK (ya commiteada)
-                    }
+                    Some(TransactionState::Commit) => {}
                     Some(TransactionState::Abort) => {}
-                    None => {
-                        // transaction id no existe???
-                    }
+                    None => {}
                 }
             }
             _ => panic!("Invalid"),

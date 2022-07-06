@@ -45,6 +45,11 @@ impl Handler<TransactionMessage> for Bank {
         println!("[Bank] handle: {:?}", msg);
         match msg {
             TransactionMessage::Prepare { transaction } => {
+                if self.transaction_log.contains_key(&transaction.id) {
+                    // Transaction is already in the log, so it was already prepared.
+                    return Ok(Some(true));
+                }
+
                 if transaction.client == "falla_banco" {
                     return Ok(Some(false));
                 }
@@ -77,13 +82,9 @@ impl Handler<TransactionMessage> for Bank {
                         self.transaction_log
                             .insert(transaction_id, TransactionState::Commit);
                     }
-                    Some(TransactionState::Commit) => {
-                        // Mandar OK (ya commiteada)
-                    }
+                    Some(TransactionState::Commit) => {}
                     Some(TransactionState::Abort) => {}
-                    None => {
-                        // transaction id no existe???
-                    }
+                    None => {}
                 }
             }
             _ => panic!("Invalid"),

@@ -22,7 +22,6 @@ const BASE_PEER_PORT: u16 = 27000;
 const RECV_TIMEOUT: Duration = Duration::from_secs(1);
 const LEADER_HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(1);
 const LEADER_ELECTION_TIMEOUT: Duration = Duration::from_secs(10);
-const WAIT_FOR_LEADER_TIMEOUT: Duration = Duration::from_secs(15);
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(3);
 
 const MIN_PEER_ID: PeerId = 1;
@@ -142,11 +141,9 @@ impl BullyLeaderElectionInner {
     }
 
     fn get_leader_id(&self) -> PeerId {
-        let leader_id = self
-            .leader_id
-            .wait_timeout_while(WAIT_FOR_LEADER_TIMEOUT, |leader_id| leader_id.is_none())
-            .expect("Mutex poisoned");
-        leader_id.unwrap_or(self.id)
+        self.leader_id
+            .wait_while(|leader_id| leader_id.is_none())
+            .expect("Mutex poisoned")
     }
 
     fn responder(&mut self) {
